@@ -1,32 +1,72 @@
 # api-rest-affine
 
-> REST API bridge for self-hosted Affine instances.
-> GraphQL-first, no Yjs manipulation. Built for Node.js 22+.
+> **REST API bridge for self-hosted Affine instances** — expose your Affine data through a clean, documented REST interface.
 
-## What is this?
+[![CI](https://github.com/GarriguesN/api-rest-affine/actions/workflows/ci.yml/badge.svg)](https://github.com/GarriguesN/api-rest-affine/actions)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/typescript-strict-blue)](https://www.typescriptlang.org)
 
-A lightweight microservice that exposes your self-hosted Affine data through a clean
-REST API. The bridge handles authentication with Affine and translates GraphQL queries
-into JSON responses.
+---
 
-**Why?** If you want to build integrations with Affine (Telegram bots, automations,
-external dashboards) without dealing with cookies, CSRF tokens, or the Affine GraphQL
-schema directly — this is the layer in between.
+## Table of Contents
 
-## Architecture
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Authentication](#authentication)
+- [Navigation Tree](#navigation-tree)
+- [Endpoints Reference](#endpoints-reference)
+  - [Health & System](#health--system)
+  - [Authentication](#authentication-1)
+  - [Workspaces](#workspaces)
+  - [Docs / Pages](#docs--pages)
+  - [Collections](#collections)
+  - [Blobs](#blobs)
+  - [Sync (SpaceSyncGateway)](#sync-spacesyncgateway)
+  - [RealtimeGateway ⚠️](#realtimegateway-)
+- [Error Codes](#error-codes)
+- [Rate Limiting](#rate-limiting)
+- [Architecture](#architecture)
+- [Development](#development)
 
-```
-Client (bot, script, dashboard)
-  → REST API (this bridge, :3002)
-    → Affine GraphQL (notes.nglab.es/graphql)
-```
+---
 
-The bridge is **read-only** in this version. Writing content (creating pages,
-editing blocks) requires Socket.IO + Yjs and is planned for a future release.
+## Overview
 
-## Quick start
+`api-rest-affine` is a lightweight microservice that wraps your self-hosted Affine instance's APIs (GraphQL + Socket.IO) behind a clean REST interface.
 
-### 1. Clone and install
+**Why?** Building integrations with Affine — Telegram bots, automations, external dashboards, scripts — requires dealing with:
+- Cookie-based authentication and CSRF tokens
+- GraphQL queries and mutations
+- Socket.IO connections for real-time data
+- Yjs binary encoding for document manipulation
+
+This bridge handles all of that. You get JSON over HTTP.
+
+### Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Auth proxy | ✅ Stable | Login, logout, session, preflight via REST |
+| Workspace CRUD | ✅ Stable | List, get, create, delete workspaces |
+| Workspace membership | ✅ Stable | Invite, leave workspaces |
+| Doc metadata | ✅ Stable | List and get doc/page metadata via GraphQL |
+| Blob download | ✅ Stable | Download workspace blobs |
+| SpaceSync (Socket.IO) | ✅ Stable | Yjs doc sync — load, push, text extraction |
+| RealtimeGateway | ⚠️ Unavailable | Live queries via Socket.IO — **not available on self-hosted** |
+| Doc deletion | ⚠️ Limited | GraphQL `deleteDoc` unavailable; Socket.IO `space:delete-doc` not implemented on self-hosted |
+
+### Instance Compatibility
+
+| Instance Type | Status | Notes |
+|---|---|---|
+| Self-hosted (`notes.nglab.es`) | ✅ Fully tested | Full feature support except RealtimeGateway |
+| Affine Cloud | ⚠️ Untested | `tokenType: 'jwt'` may be needed instead of `'session'` |
+
+---
+
+## Quick Start
+
+### 1. Install
 
 ```bash
 git clone https://github.com/GarriguesN/api-rest-affine.git
@@ -38,21 +78,22 @@ npm install
 
 ```bash
 cp .env.example .env
+# Edit .env with your values
 ```
 
-Edit `.env`:
+Required environment variables:
 
 ```env
-# Generate a long random key: openssl rand -hex 32
-API_KEY=your-long-random-api-key
+# Server
+PORT=3002
+HOST=0.0.0.0
+API_KEY=your-32-char-random-key   # openssl rand -hex 32
 
-# Your Affine instance
+# Affine instance
 AFFINE_BASE_URL=https://notes.nglab.es
 AFFINE_GRAPHQL_URL=https://notes.nglab.es/graphql
-
-# Account with access to the workspaces you want to query
-AFFINE_EMAIL=your-email@domain.com
-AFFINE_PASSWORD=your-password
+AFFINE_EMAIL=your-affine-email@example.com
+AFFINE_PASSWORD=your-affine-password
 ```
 
 ### 3. Run
@@ -66,186 +107,1058 @@ npm run build
 npm start
 ```
 
-Server starts on `http://0.0.0.0:3002`.
+Server starts at `http://localhost:3002`.
 
-### 4. Test
+### 4. Verify
 
 ```bash
-# Health check (no auth)
 curl http://localhost:3002/health
-
-# List workspaces (requires auth)
-curl -H "x-api-key: your-api-key" \
-  http://localhost:3002/api/v1/workspaces
+# {"status":"ok","version":"0.1.0","affine":"connected"}
 ```
 
-## API reference
+---
 
-All `/api/v1/*` endpoints require the header `x-api-key: <your-key>`.
+## Authentication
 
-### Public
+### Bridge Authentication (`x-api-key`)
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/health` | ❌ | Server status + Affine connectivity |
+Every request to protected endpoints must include the bridge API key:
+
+```http
+x-api-key: eb6da8f0d1bea4b124484ff9b6f39f7e7a2476d0d4c1e8fa41267d9a82db41eb
+```
+
+> **Public endpoints** (no `x-api-key` required): `/health`, `/auth/*`
+
+### Affine User Authentication
+
+Protected endpoints also require an active Affine user session. There are two ways to establish one:
+
+#### Option A — Bridge login (`/auth/login`)
+
+```bash
+curl -X POST http://localhost:3002/auth/login \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{"email":"user@example.com","password":"password"}' \
+  -c cookies.txt
+
+# Response includes sessionCookie + csrfToken
+```
+
+#### Option B — External cookies
+
+If you already have `affine_session` and `affine_csrf_token` cookies from the Affine web app, pass them directly:
+
+```bash
+curl http://localhost:3002/api/v1/workspaces \
+  -H "x-api-key: $API_KEY" \
+  -b "affine_session=xxx; affine_csrf_token=yyy"
+```
+
+### Socket.IO Endpoints (`Authorization: Bearer <token>`)
+
+Sync and realtime endpoints use a session token (from `/auth/login`):
+
+```http
+Authorization: Bearer eb807e91-e401-4beb-b322-747cffb0fade
+```
+
+---
+
+## Navigation Tree
+
+```
+/
+├── health                                    GET
+│
+├── auth/
+│   ├── login                                POST        (public)
+│   ├── logout                               POST        (public)
+│   ├── preflight                            POST        (public)
+│   ├── me                                   GET
+│   └── token/exchange                       POST        (public)
+│
+└── api/v1/
+    ├── workspaces                            GET
+    │   └── /{workspaceId}                   GET   DELETE
+    │       ├── /invite                      POST
+    │       ├── /leave                      POST
+    │       ├── /collections                 GET
+    │       └── /pages                      GET
+    │
+    ├── pages/{pageId}                      GET
+    │
+    ├── blobs/{workspaceId}/{key}            GET
+    │
+    ├── sync/workspaces/{workspaceId}/
+    │   ├── /join                           POST   DELETE
+    │   └── /docs/
+    │       ├── /timestamps                 GET
+    │       └── /{docId}                    GET   PUT   DELETE
+    │           └── /text                   GET
+    │
+    └── realtime/
+        ├── user/me/
+        │   ├── /profile                    GET
+        │   ├── /settings                  GET
+        │   ├── /access-tokens             GET
+        │   ├── /notifications/count       GET
+        │   └── /quota                     GET
+        │
+        └── workspaces/{workspaceId}/
+            ├── /access                     GET
+            ├── /config                     GET
+            ├── /members                    GET
+            ├── /invite-link                GET
+            ├── /quota                      GET
+            ├── /embedding-progress         GET
+            ├── /copilot/transcript         GET
+            └── /docs/{docId}/
+                ├── /share-state            GET
+                ├── /grants                 GET
+                └── /comments               GET
+```
+
+---
+
+## Endpoints Reference
+
+> **Base URL:** `http://localhost:3002`
+>
+> **Headers (protected):** `x-api-key: <your-api-key>` + user session cookie
+>
+> **Content-Type:** `application/json` for all POST/PUT/PATCH requests
+
+---
+
+### Health & System
+
+#### `GET /health`
+
+Health check — no authentication required.
+
+**Response** `200 OK`
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "affine": "connected"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Always `"ok"` when healthy |
+| `version` | string | Bridge version |
+| `affine` | string | `"connected"` if Affine session is valid |
+
+---
+
+### Authentication
+
+All `/auth/*` endpoints are **public** — no `x-api-key` required.
+
+---
+
+#### `POST /auth/login`
+
+Authenticate with Affine and establish a user session.
+
+**Request body**
+```json
+{
+  "email": "user@example.com",
+  "password": "your-password"
+}
+```
+
+**Response** `200 OK`
+```json
+{
+  "user": {
+    "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+    "name": "naxtio",
+    "email": "user@example.com",
+    "emailVerified": false,
+    "hasPassword": true,
+    "avatarUrl": null
+  },
+  "sessionCookie": "eb807e91-e401-4beb-b322-747cffb0fade",
+  "csrfToken": "45245517-b68e-4bd2-878c-1e640411d51f",
+  "jwtToken": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user` | object | User profile |
+| `sessionCookie` | string | **Use this as `Authorization: Bearer <token>`** for Sync/Realtime endpoints |
+| `csrfToken` | string | CSRF token for form actions |
+| `jwtToken` | null | JWT exchange not available on self-hosted |
+
+---
+
+#### `GET /auth/me`
+
+Get the current authenticated user.
+
+**Headers:** `x-api-key`, session cookie (`affine_session`)
+
+**Response** `200 OK`
+```json
+{
+  "user": {
+    "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+    "name": "naxtio",
+    "email": "user@example.com",
+    "emailVerified": false,
+    "hasPassword": true,
+    "avatarUrl": null
+  }
+}
+```
+
+**Response** `401 Unauthorized` — invalid or expired session
+
+---
+
+#### `POST /auth/preflight`
+
+Check if an email is registered on the Affine instance.
+
+**Request body**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response** `200 OK` — registered user
+```json
+{
+  "registered": true,
+  "hasPassword": true
+}
+```
+
+**Response** `200 OK` — unregistered user
+```json
+{
+  "registered": false,
+  "hasPassword": false
+}
+```
+
+---
+
+#### `POST /auth/logout`
+
+End the current user session.
+
+**Headers:** `x-api-key`, session cookie
+
+**Response** `200 OK`
+```json
+{
+  "ok": true
+}
+```
+
+---
+
+#### `POST /auth/token/exchange`
+
+Exchange an Affine exchange code for a JWT token.
+
+> ⚠️ **Note:** This endpoint is for Affine Cloud compatibility. On self-hosted instances, the `sessionCookie` from `/auth/login` can be used directly as the Socket.IO auth token.
+
+**Request body**
+```json
+{
+  "code": "exchange-code-from-affine"
+}
+```
+
+**Response** `200 OK`
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
 
 ### Workspaces
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/workspaces` | List all workspaces |
-| GET | `/api/v1/workspaces/:id` | Get workspace metadata |
+**Base path:** `/api/v1/workspaces`
 
-### Collections
+**Auth:** `x-api-key` + session cookie
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/workspaces/:id/collections` | List collections in a workspace |
+---
 
-> **Note:** The current Affine GraphQL schema does not expose a `collections` field
-> on `WorkspaceType`. This endpoint intentionally returns an empty array.
+#### `GET /api/v1/workspaces`
 
-### Pages
+List all workspaces accessible to the authenticated user.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/workspaces/:id/pages` | List pages with pagination |
-| GET | `/api/v1/pages/:pageId?workspaceId=` | Get single page metadata |
-
-Pagination params (all optional):
-
-| Param | Default | Max | Description |
-|-------|---------|-----|-------------|
-| `first` | 20 | 100 | Number of results |
-| `offset` | 0 | — | Skip N results |
-
-Example:
-
-```bash
-curl -H "x-api-key: your-key" \
-  "http://localhost:3002/api/v1/workspaces/UUID/pages?first=10&offset=0"
-```
-
-## Response format
-
-All responses are JSON.
-
-**Success:**
+**Response** `200 OK`
 ```json
 {
-  "pages": [...],
-  "totalCount": 42,
-  "pageInfo": {
-    "hasNextPage": true,
-    "hasPreviousPage": false
+  "workspaces": [
+    {
+      "id": "58cb2776-ec01-4242-824e-a930aa35671d",
+      "createdAt": "2026-06-17T07:37:22.924Z",
+      "memberCount": 2,
+      "initialized": true,
+      "enableSharing": true,
+      "enableAi": false,
+      "role": "Owner",
+      "public": false,
+      "owner": {
+        "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+        "name": "naxtio",
+        "email": "user@example.com"
+      }
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string (UUID) | Workspace identifier |
+| `role` | string | Your role: `"Owner"` or `"Collaborator"` |
+| `public` | boolean | Whether the workspace is publicly accessible |
+| `enableAi` | boolean | Whether Affine AI features are enabled |
+| `memberCount` | number | Total number of members |
+
+---
+
+#### `GET /api/v1/workspaces/{workspaceId}`
+
+Get a single workspace by ID.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workspaceId` | UUID | Workspace identifier |
+
+**Response** `200 OK`
+```json
+{
+  "workspace": {
+    "id": "58cb2776-ec01-4242-824e-a930aa35671d",
+    "createdAt": "2026-06-17T07:37:22.924Z",
+    "memberCount": 2,
+    "initialized": true,
+    "enableSharing": true,
+    "enableAi": false,
+    "role": "Owner",
+    "public": false,
+    "owner": {
+      "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+      "name": "naxtio",
+      "email": "user@example.com"
+    }
   }
 }
 ```
 
-**Error:**
+---
+
+#### `DELETE /api/v1/workspaces/{workspaceId}`
+
+Delete a workspace. **Requires Owner role.**
+
+**Response** `200 OK`
+```json
+{
+  "ok": true
+}
+```
+
+**Response** `403 Forbidden` — insufficient permissions
+
+---
+
+#### `POST /api/v1/workspaces/{workspaceId}/invite`
+
+Invite members to a workspace by email.
+
+> ⚠️ **Restriction:** Affine may require the workspace to be older than 24 hours before invitations can be sent.
+
+**Request body**
+```json
+{
+  "emails": [
+    "colleague@example.com",
+    "partner@example.com"
+  ]
+}
+```
+
+**Response** `200 OK`
+```json
+{
+  "invitations": [
+    {
+      "email": "colleague@example.com",
+      "inviteId": "inv-abc123",
+      "error": null
+    },
+    {
+      "email": "partner@example.com",
+      "inviteId": "inv-def456",
+      "error": null
+    }
+  ]
+}
+```
+
+**Response** `403 Forbidden` — invitations not yet available (new workspace)
+
+**Response** `400 Bad Request` — validation error
+
+---
+
+#### `POST /api/v1/workspaces/{workspaceId}/leave`
+
+Leave a workspace.
+
+> ⚠️ **Note:** Workspace owners cannot leave. Transfer ownership first or delete the workspace.
+
+**Response** `200 OK`
+```json
+{
+  "ok": true
+}
+```
+
+**Response** `403 Forbidden` — `Owner can not leave the workspace`
+
+---
+
+#### `GET /api/v1/workspaces/{workspaceId}/pages`
+
+List all pages (docs) in a workspace with pagination.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `first` | integer | 20 | Number of results per page (max 100) |
+| `offset` | integer | 0 | Number of results to skip |
+
+**Response** `200 OK`
+```json
+{
+  "pages": {
+    "edges": [
+      {
+        "cursor": "YXJyYXljb20uY3Vyc29yIDE=",
+        "node": {
+          "id": "YgxO9m7Cga",
+          "title": "Getting Started",
+          "createdAt": "2026-06-17T07:38:22.000Z",
+          "updatedAt": "2026-06-17T14:12:00.000Z",
+          "mode": "Page"
+        }
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true,
+      "hasPreviousPage": false,
+      "startCursor": "YXJyYXljb20uY3Vyc29yIDE=",
+      "endCursor": "YXJyYXljb20uY3Vyc29yIDEwMA=="
+    },
+    "totalCount": 21
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/workspaces/{workspaceId}/collections`
+
+List collections in a workspace.
+
+**Response** `200 OK`
+```json
+{
+  "collections": {
+    "edges": [],
+    "pageInfo": { "hasNextPage": false },
+    "totalCount": 0
+  }
+}
+```
+
+> ⚠️ **Note:** Collections may not be available on all Affine versions.
+
+---
+
+### Docs / Pages
+
+#### `GET /api/v1/pages/{pageId}`
+
+Get metadata for a single page/doc.
+
+**Response** `200 OK`
+```json
+{
+  "page": {
+    "id": "YgxO9m7Cga",
+    "title": "Getting Started",
+    "createdAt": "2026-06-17T07:38:22.000Z",
+    "updatedAt": "2026-06-17T14:12:00.000Z",
+    "mode": "Page"
+  }
+}
+```
+
+---
+
+### Blobs
+
+#### `GET /api/v1/blobs/{workspaceId}/{key}`
+
+Download a binary blob from a workspace.
+
+> ⚠️ **Note:** Blob upload is not supported via REST. Use the GraphQL `setBlob` mutation with `graphql-upload` multipart encoding.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workspaceId` | UUID | Workspace identifier |
+| `key` | string | Blob key (from doc content references) |
+
+**Response** `200 OK`
+```
+Content-Type: application/octet-stream
+Content-Length: 123456
+[binary data]
+```
+
+**Response** `404 Not Found` — blob does not exist
+
+---
+
+### Sync (SpaceSyncGateway)
+
+**Base path:** `/api/v1/sync/workspaces/{workspaceId}`
+
+**Auth:** `x-api-key` + `Authorization: Bearer <sessionToken>` (from `/auth/login`)
+
+Uses Affine's Socket.IO SpaceSyncGateway for Yjs document synchronization. Each request creates a temporary Socket.IO connection, executes the operation, and closes.
+
+---
+
+#### `POST /api/v1/sync/workspaces/{workspaceId}/join`
+
+Join a workspace room to receive doc update broadcasts.
+
+**Request body:** `{}` (empty)
+
+**Response** `200 OK`
+```json
+{
+  "clientId": "fYB0ZBw_cx1WOb8lAABh"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `clientId` | string | Your Socket.IO client ID in this workspace |
+
+---
+
+#### `DELETE /api/v1/sync/workspaces/{workspaceId}/join`
+
+Leave a workspace room.
+
+**Response** `200 OK`
+```json
+{
+  "ok": true
+}
+```
+
+---
+
+#### `GET /api/v1/sync/workspaces/{workspaceId}/docs/timestamps`
+
+Get the last-modified timestamp for every document in a workspace.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `since` | integer | Unix timestamp (ms) — filter docs modified after this time |
+
+**Response** `200 OK`
+```json
+{
+  "C9Rs42EsT2": 1781681844109,
+  "YgxO9m7Cga": 1781682326634,
+  "Y_4PQeZBtd": 1781688526381,
+  "WHhrdpWHjm": 1781688589425,
+  "db$58cb2776-ec01-4242-824e-a930aa35671d$folders": 1781689504081
+}
+```
+
+Returns a map of `docId → lastModifiedTimestamp` (Unix ms). Internal/system docs (prefixed with `db$`, `userdata$`) are included.
+
+---
+
+#### `GET /api/v1/sync/workspaces/{workspaceId}/docs/{docId}`
+
+Load the full Yjs binary state of a document.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `stateVector` | string (base64) | Optional Yjs state vector — if provided, server returns only missing updates instead of full state |
+
+**Response** `200 OK`
+```json
+{
+  "docId": "YgxO9m7Cga",
+  "timestamp": 1781682326634,
+  "state": "A+78+8bdxe8FkAGR7cDl6aLQBOYBpZrs...",
+  "missing": "Awru/PvG3cXvBQChpZrs+PufowHpMQG..."
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `docId` | string | Document identifier |
+| `timestamp` | number | Server-side last modification timestamp (Unix ms) |
+| `state` | string (base64) | Yjs binary state (when no `stateVector` provided) |
+| `missing` | string (base64) | Yjs binary updates since your `stateVector` (when `stateVector` is provided) |
+
+> **Note:** When fetching without `stateVector`, AFFiNE returns a minimal state vector in `state` and the full document in `missing`. Apply only `missing` to a fresh Y.Doc to reconstruct the document.
+
+---
+
+#### `GET /api/v1/sync/workspaces/{workspaceId}/docs/{docId}/text`
+
+Load a document and extract its plain text content.
+
+**Response** `200 OK`
+```json
+{
+  "docId": "YgxO9m7Cga",
+  "title": "Getting Started ",
+  "mode": null,
+  "plainText": "Getting Started \nWelcome to AFFiNE! \nYou can start with a normal page...",
+  "blockCount": 111
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `docId` | string | Document identifier |
+| `title` | string\|null | Document title (from `prop:title` in root block) |
+| `mode` | string\|null | `"Page"` or `"Edgeless"` (may be null) |
+| `plainText` | string | Full text content extracted from all blocks |
+| `blockCount` | number | Total number of blocks in the document |
+
+---
+
+#### `PUT /api/v1/sync/workspaces/{workspaceId}/docs/{docId}`
+
+Create or update a document by pushing a Yjs update.
+
+**Request body**
+```json
+{
+  "update": "A+78+8bdxe8FkAGR7cDl6aLQBOYBpZrs+PufowHtMQ=="
+}
+```
+
+> `update` must be a base64-encoded Yjs binary update (from `Y.encodeStateAsUpdate(doc)`).
+
+**Response** `200 OK`
+```json
+{
+  "docId": "test-api-doc",
+  "timestamp": 1781729099748
+}
+```
+
+---
+
+#### `DELETE /api/v1/sync/workspaces/{workspaceId}/docs/{docId}`
+
+Permanently delete a document.
+
+**Response** `501 Not Implemented`
+
 ```json
 {
   "error": {
-    "code": "NOT_FOUND",
-    "message": "Workspace 'xyz' not found"
+    "code": "NOT_IMPLEMENTED",
+    "message": "space:delete-doc is not available on this AFFiNE instance. The RealtimeGateway delete-doc operation is not implemented on self-hosted AFFiNE."
   }
 }
 ```
 
-Error codes: `UNAUTHORIZED` (401), `NOT_FOUND` (404), `VALIDATION_ERROR` (400), `GRAPHQL_ERROR` (502), `INTERNAL_SERVER_ERROR` (500).
+> ⚠️ **Limitation:** Document deletion via Socket.IO (`space:delete-doc`) is not implemented on self-hosted AFFiNE instances. No GraphQL alternative exists. This is an AFFiNE server limitation, not the bridge.
 
-## Environment variables
+---
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `API_KEY` | ✅ | — | Long random string for bridge auth |
-| `AFFINE_BASE_URL` | ✅ | — | Base URL of your Affine instance |
-| `AFFINE_GRAPHQL_URL` | ✅ | — | GraphQL endpoint URL |
-| `AFFINE_EMAIL` | ✅ | — | Affine account email |
-| `AFFINE_PASSWORD` | ✅ | — | Affine account password |
-| `AFFINE_SESSION_COOKIE` | ❌ | — | Pre-set session cookie (skip login at startup) |
-| `AFFINE_CSRF_TOKEN` | ❌ | — | Pre-set CSRF token |
-| `PORT` | ❌ | 3002 | Server port |
-| `HOST` | ❌ | 0.0.0.0 | Server host |
-| `LOG_LEVEL` | ❌ | info | Pino log level |
-| `NODE_ENV` | ❌ | development | `development` or `production` |
+### RealtimeGateway ⚠️
 
-## Docker
+**Base path:** `/api/v1/realtime`
 
-```bash
-# Build
-docker build -t api-rest-affine .
+**Auth:** `x-api-key` + `Authorization: Bearer <sessionToken>`
 
-# Run
-docker run -d \
-  -p 3002:3002 \
-  -e API_KEY=your-key \
-  -e AFFINE_EMAIL=your@email.com \
-  -e AFFINE_PASSWORD=your-password \
-  -e AFFINE_BASE_URL=https://notes.nglab.es \
-  -e AFFINE_GRAPHQL_URL=https://notes.nglab.es/graphql \
-  --name affine-bridge \
-  api-rest-affine
+> ⚠️ **Availability Notice:** The RealtimeGateway (live query subscriptions via Socket.IO) is **not available on self-hosted AFFiNE instances**. All endpoints in this section return `501 Not Implemented` or time out.
+>
+> The underlying AFFiNE server does not respond to `realtime:request` events on self-hosted deployments. All data these endpoints would provide is already accessible via GraphQL (workspaces, pages, etc.).
+
+---
+
+#### `GET /api/v1/realtime/user/me/profile`
+
+Get the current user's profile with feature flags.
+
+**Response** `501 Not Implemented`
+```json
+{
+  "error": {
+    "code": "NOT_IMPLEMENTED",
+    "message": "RealtimeGateway is not available on self-hosted AFFiNE instances"
+  }
+}
 ```
 
-Image size: ~80MB. RAM usage at rest: ~50-70MB.
+---
+
+#### `GET /api/v1/realtime/user/me/settings`
+
+Get notification settings.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/user/me/access-tokens`
+
+List personal access tokens.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/user/me/notifications/count`
+
+Get unread notification count.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/user/me/quota`
+
+Get user storage quota state.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/access`
+
+Get user's role and permissions in a workspace.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/config`
+
+Get workspace feature flags (AI, sharing, URL preview, doc embedding).
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/members`
+
+Get paginated member list for a workspace.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `skip` | integer | 0 | Number to skip |
+| `take` | integer | 20 | Number to return (max 100) |
+| `query` | string | — | Filter by name/email |
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/invite-link`
+
+Get the workspace invite link.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/quota`
+
+Get workspace storage quota state.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/embedding-progress`
+
+Get AI embedding progress.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/copilot/transcript`
+
+Get copilot transcript task.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `blobId` | string | Blob identifier |
+| `taskId` | string | Task identifier |
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/docs/{docId}/share-state`
+
+Get document public share state.
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/docs/{docId}/grants`
+
+Get document-level permission grants with cursor pagination.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `first` | integer | 20 | Results per page (max 100) |
+| `after` | string | — | Cursor for pagination |
+
+**Response** `501 Not Implemented`
+
+---
+
+#### `GET /api/v1/realtime/workspaces/{workspaceId}/docs/{docId}/comments`
+
+Get comment history with cursor pagination.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `after` | string | — | Cursor |
+| `first` | integer | 20 | Results per page (max 100) |
+
+**Response** `501 Not Implemented`
+
+---
+
+## Error Codes
+
+All errors follow a consistent JSON structure:
+
+```json
+{
+  "error": {
+    "code": "GRAPHQL_ERROR",
+    "message": "Human-readable description",
+    "graphqlErrors": []
+  }
+}
+```
+
+### Bridge Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Request body, query, or params failed Zod validation |
+| `BAD_REQUEST` | 400 | Malformed request |
+| `UNAUTHORIZED` | 401 | Missing or invalid `x-api-key` |
+| `JWT_MISSING` | 401 | Missing `Authorization: Bearer` header |
+| `JWT_INVALID` | 401 | Invalid or expired session token |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `NOT_IMPLEMENTED` | 501 | Feature not available on this AFFiNE instance |
+| `GRAPHQL_ERROR` | 502 | AFFiNE GraphQL returned an error |
+| `SERVICE_UNAVAILABLE` | 503 | AFFiNE is unreachable or session expired |
+| `INTERNAL_SERVER_ERROR` | 500 | Unexpected bridge error |
+
+### GraphQL Error Extensions
+
+When `code` is `GRAPHQL_ERROR`, the `graphqlErrors` array contains detailed AFFiNE error information:
+
+```json
+{
+  "error": {
+    "code": "GRAPHQL_ERROR",
+    "message": "Owner can not leave the workspace.",
+    "graphqlErrors": [
+      {
+        "message": "Owner can not leave the workspace.",
+        "extensions": {
+          "status": 403,
+          "type": "ACTION_FORBIDDEN",
+          "name": "OWNER_CAN_NOT_LEAVE_WORKSPACE"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Common AFFiNE Restrictions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ACTION_FORBIDDEN` — "24 hours after signup" | Workspace or account too new | Wait 24 hours |
+| `OWNER_CAN_NOT_LEAVE_WORKSPACE` | Owner tried to leave | Transfer ownership or delete |
+| RealtimeGateway timeout | Self-hosted limitation | Use GraphQL equivalents instead |
+
+---
+
+## Rate Limiting
+
+Currently **no rate limiting** is enforced. The bridge proxies requests directly to AFFiNE — respect AFFiNE's own rate limits.
+
+Recommended: max **10 concurrent requests** per client session.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Client                                │
+│  (Telegram bot, script, dashboard, mobile app, etc.)        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP/REST
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   api-rest-affine (:3002)                   │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │  Auth Module │  │  GraphQL Module   │  │  Socket.IO   │  │
+│  │  /auth/*     │  │  /api/v1/*       │  │  /sync/*     │  │
+│  └──────┬───────┘  └────────┬─────────┘  └──────┬───────┘  │
+│         │                   │                    │            │
+│         └───────────────────┼────────────────────┘            │
+│                             ▼                                  │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │                  Affine Instance                         │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │   │
+│  │  │  REST API   │  │   GraphQL    │  │  Socket.IO   │  │   │
+│  │  │ /api/auth/* │  │  /graphql   │  │  /socket.io  │  │   │
+│  │  └─────────────┘  └──────────────┘  └───────────────┘  │   │
+│  └────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Module Breakdown
+
+| Module | Protocol | Description |
+|--------|----------|-------------|
+| `auth` | REST → Affine REST | Login, logout, session management |
+| `workspaces` | REST → GraphQL | Workspace CRUD and membership |
+| `pages` | REST → GraphQL | Page/doc metadata |
+| `blobs` | REST → Affine Blob API | Blob download |
+| `sync` | REST → Socket.IO SpaceSyncGateway | Yjs document sync |
+| `realtime` | REST → Socket.IO RealtimeGateway | Live queries (unavailable self-hosted) |
+
+---
 
 ## Development
 
+### Scripts
+
 ```bash
-npm run dev          # Dev server with hot reload (tsx)
-npm run build         # Compile TypeScript
-npm run test          # Run tests (Vitest)
-npm run lint          # ESLint
-npm run typecheck     # TypeScript check without emit
+npm run dev        # Development with hot-reload (tsx watch)
+npm run build      # Compile TypeScript
+npm start          # Run production server
+npm test           # Run tests
+npm run lint       # ESLint
+npm run typecheck  # TypeScript type check
 ```
 
-## Project structure
+### Environment
+
+```bash
+# Copy and edit
+cp .env.example .env
+
+# Required
+API_KEY=                          # Bridge API key (openssl rand -hex 32)
+AFFINE_BASE_URL=                  # Your AFFiNE instance URL
+AFFINE_GRAPHQL_URL=              # GraphQL endpoint
+AFFINE_EMAIL=                    # AFFiNE account email
+AFFINE_PASSWORD=                 # AFFiNE account password
+PORT=3002
+```
+
+### Testing
+
+```bash
+npm test           # Run all tests (Vitest)
+npm run test:watch # Watch mode
+```
+
+### Project Structure
 
 ```
 src/
-├── config/env.ts              # Zod schema validation
+├── server.ts              # Entry point
+├── app.ts                 # Fastify app builder
+├── config/
+│   └── env.ts             # Environment variables (Zod)
 ├── infra/
-│   ├── affine/
-│   │   ├── auth.ts           # Affine sign-in, session cookies
-│   │   └── types.ts         # TypeScript types from GraphQL schema
-│   ├── graphql/
-│   │   ├── client.ts        # GraphQL client with auto-retry on 401
-│   │   └── queries.ts       # GraphQL query strings
-│   └── http/
-│       └── auth-guard.ts    # x-api-key validation
+│   ├── affine/            # Affine REST auth session
+│   ├── graphql/           # GraphQL client + queries
+│   ├── http/              # Auth guard middleware
+│   └── socket/            # Socket.IO client
 ├── modules/
-│   ├── health/              # GET /health
-│   ├── workspaces/          # GET /workspaces
-│   ├── collections/         # GET /workspaces/:id/collections
-│   └── pages/              # GET /workspaces/:id/pages, /pages/:id
+│   ├── auth/              # /auth/* routes
+│   ├── workspaces/         # /api/v1/workspaces/*
+│   ├── pages/             # /api/v1/pages/*
+│   ├── blobs/             # /api/v1/blobs/*
+│   ├── sync/              # /api/v1/sync/* (SpaceSyncGateway)
+│   ├── realtime/          # /api/v1/realtime/* (RealtimeGateway)
+│   └── health/            # /health
 ├── plugins/
-│   └── error-handler.ts     # Consistent JSON error responses
-├── utils/
-│   ├── errors.ts           # Typed error classes
-│   └── url.ts              # Affine URL builders
-├── app.ts                  # Fastify app builder
-└── server.ts               # Bootstrap
+│   └── error-handler.ts   # Centralized error formatting
+├── types/
+│   └── realtime.ts        # Socket.IO type definitions
+└── utils/
+    ├── errors.ts         # Typed error classes
+    └── yjs-parser.ts     # Yjs binary → plain text parser
 ```
 
-## Known limitations
-
-- **Read-only** in this version. Creating/editing pages requires Socket.IO + Yjs
-  (see [docs/api-map.md](docs/api-map.md) for technical context).
-- No `workspace.name` or `workspace.avatarUrl` in the GraphQL schema — workspace
-  identity is via `workspace.owner.name`.
-- `/collections` returns empty (no equivalent field in the GraphQL schema).
-- API stability is not guaranteed — the Affine GraphQL API is not publicly
-  documented. Schema verified against notes.nglab.es (Affine v0.26+).
-
-## Roadmap
-
-- [ ] `POST /api/v1/pages/create` — create empty pages via Socket.IO
-- [ ] Block content read/write (requires Yjs integration)
-- [ ] Webhook support for Affine events
-- [ ] Rate limiting per API key
-- [ ] Metrics endpoint (Prometheus-compatible)
+---
 
 ## License
 
-MIT
+MIT — GarriguesNacho
