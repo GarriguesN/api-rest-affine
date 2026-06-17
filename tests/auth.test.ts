@@ -45,8 +45,13 @@ function mockAffineResponse(body: unknown, options: {
 // ---------------------------------------------------------------------------
 
 describe('auth routes', () => {
-  beforeEach(() => mockFetch.mockReset());
-  afterEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    // Only reset implementations — keep preset values intact for the current test
+    mockFetch.mockClear();
+  });
+  afterEach(() => {
+    mockFetch.mockClear();
+  });
 
   // -------------------------------------------------------------------------
   // POST /auth/preflight
