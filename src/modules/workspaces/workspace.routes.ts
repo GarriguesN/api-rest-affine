@@ -1,17 +1,19 @@
 /**
- * Workspace module — REST handlers for /workspaces.
+ * Workspace module — REST handlers for /api/v1/workspaces.
  */
 
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
 import { gqlRequest } from '../../infra/graphql/client.js';
 import { LIST_WORKSPACES, GET_WORKSPACE } from '../../infra/graphql/queries.js';
-import type {
-  ListWorkspacesResponse,
-  GetWorkspaceResponse,
-  AffineWorkspace,
-} from '../../infra/affine/types.js';
+import type { ListWorkspacesResponse, GetWorkspaceResponse } from '../../infra/graphql/queries.js';
 import { NotFoundError } from '../../utils/errors.js';
+
+const ownerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+});
 
 export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/workspaces
@@ -24,10 +26,14 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
             workspaces: z.array(
               z.object({
                 id: z.string(),
-                name: z.string(),
-                avatarUrl: z.string().nullable(),
                 createdAt: z.string(),
                 memberCount: z.number(),
+                initialized: z.boolean(),
+                enableSharing: z.boolean(),
+                enableAi: z.boolean(),
+                role: z.string(),
+                public: z.boolean(),
+                owner: ownerSchema,
               }),
             ),
           }),
@@ -36,16 +42,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
     },
     async (_request, reply) => {
       const data = await gqlRequest<ListWorkspacesResponse>(LIST_WORKSPACES);
-
-      const workspaces: AffineWorkspace[] = data.workspaces.map(w => ({
-        id: w.id,
-        name: w.name,
-        avatarUrl: w.avatarUrl,
-        createdAt: w.createdAt,
-        memberCount: w.memberCount,
-      }));
-
-      return reply.send({ workspaces });
+      return reply.send({ workspaces: data.workspaces });
     },
   );
 
@@ -61,13 +58,14 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
           200: z.object({
             workspace: z.object({
               id: z.string(),
-              name: z.string(),
-              avatarUrl: z.string().nullable(),
               createdAt: z.string(),
               memberCount: z.number(),
-              initialized: z.boolean().optional(),
-              enableSharing: z.boolean().optional(),
-              enableAi: z.boolean().optional(),
+              initialized: z.boolean(),
+              enableSharing: z.boolean(),
+              enableAi: z.boolean(),
+              role: z.string(),
+              public: z.boolean(),
+              owner: ownerSchema,
             }),
           }),
         },

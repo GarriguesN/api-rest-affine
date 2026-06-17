@@ -1,12 +1,23 @@
 /**
  * GraphQL queries and mutations for Affine.
  *
- * Schema source: packages/backend/server/src/schema.gql, commit canary.
- * Map: docs/api-map.md
+ * Schema source: live introspection against notes.nglab.es (2026-06-17).
+ * - WorkspaceType has: id, createdAt, initialized, enableAi, enableSharing,
+ *   role, public, memberCount, owner { id, name, email }
+ * - No workspace.name, no workspace.avatarUrl
+ * - DocType has: id, title (nullable), createdAt, updatedAt, mode, workspaceId
+ * - PaginatedDocType has: edges, pageInfo, totalCount
+ * - DocTypeEdge has: cursor, node (NOT pageInfo)
+ * - No collections field on WorkspaceType — /collections endpoint returns empty
  *
- * ⚠️ Mutations de docs/páginas NO existen en GraphQL — se implementarán
- *    via Socket.IO + Yjs en una versión posterior.
+ * ⚠️ Mutations (create/update pages) do NOT exist in GraphQL — implemented
+ *    via Socket.IO + Yjs in a future release.
  */
+
+import type { ListWorkspacesResponse, GetWorkspaceResponse, ListPagesResponse, PageEdge, GetPageResponse } from '../affine/types.js';
+
+// Re-export for convenience
+export type { ListWorkspacesResponse, GetWorkspaceResponse, ListPagesResponse, PageEdge, GetPageResponse };
 
 // ---------------------------------------------------------------------------
 // Queries
@@ -17,10 +28,18 @@ export const LIST_WORKSPACES = /* GraphQL */ `
   query ListWorkspaces {
     workspaces {
       id
-      name
-      avatarUrl
       createdAt
+      initialized
+      enableAi
+      enableSharing
+      role
+      public
       memberCount
+      owner {
+        id
+        name
+        email
+      }
     }
   }
 `;
@@ -30,13 +49,18 @@ export const GET_WORKSPACE = /* GraphQL */ `
   query GetWorkspace($id: String!) {
     workspace(id: $id) {
       id
-      name
-      avatarUrl
       createdAt
-      memberCount
       initialized
-      enableSharing
       enableAi
+      enableSharing
+      role
+      public
+      memberCount
+      owner {
+        id
+        name
+        email
+      }
     }
   }
 `;
@@ -51,7 +75,7 @@ export const LIST_PAGES = /* GraphQL */ `
           node {
             id
             title
-            createDate
+            createdAt
             updatedAt
             mode
           }
@@ -74,7 +98,7 @@ export const GET_PAGE = /* GraphQL */ `
       doc(docId: $docId) {
         id
         title
-        createDate
+        createdAt
         updatedAt
         mode
       }
@@ -82,29 +106,15 @@ export const GET_PAGE = /* GraphQL */ `
   }
 `;
 
-/** List collections (CopilotContextCategory) inside a workspace. */
-export const LIST_COLLECTIONS = /* GraphQL */ `
-  query ListCollections($workspaceId: String!) {
-    workspace(id: $workspaceId) {
-      collections {
-        id
-        name
-        description
-        docCount
-      }
-    }
-  }
-`;
-
 // ---------------------------------------------------------------------------
-// Mutations (placeholder — no doc mutations in GraphQL yet)
+// Placeholder mutations (no doc mutations exist in GraphQL)
 // ---------------------------------------------------------------------------
 
-/** Placeholder: creating docs requires Socket.IO + Yjs (future work). */
+/**
+ * Placeholder — creating docs requires Socket.IO + Yjs.
+ * See docs/api-map.md for details.
+ */
 export const PLACEHOLDER_CREATE_PAGE = /* GraphQL */ `
-  # createPage mutation does not exist in Affine GraphQL.
-  # It is implemented via Socket.IO space:push-doc-update.
-  # See docs/api-map.md for details.
   query __placeholder {
     __typename
   }

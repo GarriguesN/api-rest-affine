@@ -1,16 +1,16 @@
 /**
  * Collections module — REST handlers for /workspaces/:workspaceId/collections.
  *
- * Note: Uses `workspace.collections` which returns CopilotContextCategory,
- * not traditional "smart folders". See docs/api-map.md for details.
+ * NOTE: The Affine GraphQL API does NOT expose a `collections` field on
+ * WorkspaceType. There is no equivalent query in the current schema.
+ * This endpoint intentionally returns an empty list.
+ *
+ * If you need grouped/organized docs, consider using Affine's built-in
+ * workspace features via the web UI or the Socket.IO channel.
  */
 
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
-import { gqlRequest } from '../../infra/graphql/client.js';
-import { LIST_COLLECTIONS } from '../../infra/graphql/queries.js';
-import type { ListCollectionsResponse } from '../../infra/affine/types.js';
-import { NotFoundError } from '../../utils/errors.js';
 
 export const collectionRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/workspaces/:workspaceId/collections
@@ -36,27 +36,11 @@ export const collectionRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    async (request, reply) => {
-      const { workspaceId } = request.params as { workspaceId: string };
-
-      const data = await gqlRequest<ListCollectionsResponse>(LIST_COLLECTIONS, {
-        workspaceId,
-      });
-
-      if (!data.workspace) {
-        throw new NotFoundError('Workspace', workspaceId);
-      }
-
-      const collections = data.workspace.collections.map(c => ({
-        id: c.id,
-        name: c.name,
-        description: c.description ?? null,
-        docCount: c.docCount ?? 0,
-      }));
-
+    async (_request, reply) => {
+      // No GraphQL equivalent exists in the current Affine schema.
       return reply.send({
-        collections,
-        totalCount: collections.length,
+        collections: [],
+        totalCount: 0,
       });
     },
   );

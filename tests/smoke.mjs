@@ -1,9 +1,13 @@
 /**
  * Smoke tests — run against the compiled dist/ using the actual app.
- * These test the FULL stack (no mocks except env) and need a real Affine
- * instance to pass. Ideal for CI/CD.
+ * Tests the FULL stack against notes.nglab.es.
  *
- * Run with:  AFFINE_EMAIL=... AFFINE_PASSWORD=... API_KEY=... node tests/smoke.mjs
+ * Run with:
+ *   API_KEY=your-api-key node tests/smoke.mjs
+ *
+ * Env vars:
+ *   TEST_BASE_URL      (default: http://localhost:3002)
+ *   TEST_WORKSPACE_ID  (default: real workspace id for hermes@nglab.es)
  */
 
 import { readFileSync } from 'node:fs';
@@ -23,11 +27,12 @@ try {
 
 const BASE_URL = process.env.TEST_BASE_URL ?? 'http://localhost:3002';
 const API_KEY = process.env.API_KEY ?? (() => {
-  console.error('❌ TEST_API_KEY env var is required');
+  console.error('❌ API_KEY env var is required');
   process.exit(1);
 })();
 
-const ws = process.env.TEST_WORKSPACE_ID ?? '00000000-0000-0000-0000-000000000000';
+// Real workspace from hermes@nglab.es on notes.nglab.es
+const WS = process.env.TEST_WORKSPACE_ID ?? '58cb2776-ec01-4242-824e-a930aa35671d';
 
 async function request(method, path, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -63,9 +68,8 @@ console.log('🧪 Smoke tests — api-rest-affine');
 console.log(`   Base URL: ${BASE_URL}\n`);
 
 await assert('GET /health — 200 (no auth)', async () => {
-  const { status, data } = await request('GET', '/health');
+  const { status } = await request('GET', '/health');
   eq(status, 200, 'status');
-  if (!data.status === 'ok') throw new Error('expected status=ok');
 });
 
 await assert('GET /health — has affine field', async () => {
@@ -86,16 +90,32 @@ await assert('GET /api/v1/workspaces — 200 with auth', async () => {
 await assert('GET /api/v1/workspaces — returns workspaces array', async () => {
   const { data } = await request('GET', '/api/v1/workspaces');
   if (!Array.isArray(data.workspaces)) throw new Error('workspaces not an array');
+  if (data.workspaces.length === 0) throw new Error('expected at least 1 workspace');
+  const ws = data.workspaces[0];
+  if (!ws.id) throw new Error('workspace missing id');
+  if (!ws.owner?.name) throw new Error('workspace missing owner.name');
+  if (typeof ws.memberCount !== 'number') throw new Error('workspace missing memberCount');
 });
 
 await assert('GET /api/v1/workspaces/:id — 200 with valid uuid', async () => {
-  const { status } = await request('GET', `/api/v1/workspaces/${ws}`);
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}`);
   eq(status, 200, 'status');
 });
 
-await assert('GET /api/v1/workspaces/:id/collections — 200', async () => {
-  const { status } = await request('GET', `/api/v1/workspaces/${ws}/collections`);
+await assert('GET /api/v1/workspaces/:id — workspace has owner', async () => {
+  const { data } = await request('GET', `/api/v1/workspaces/${WS}`);
+  if (!data.workspace?.owner?.name) throw new Error('workspace missing owner.name');
+});
+
+await assert('GET /api/v1/workspaces/:id/collections — 200 (returns empty)', async () => {
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}/collections`);
   eq(status, 200, 'status');
+});
+
+await assert('GET /api/v1/workspaces/:id/collections — returns empty array', async () => {
+  const { data } = await request('GET', `/api/v1/workspaces/${WS}/collections`);
+  if (!Array.isArray(data.collections)) throw new Error('collections not an array');
+  if (data.totalCount !== 0) throw new Error('expected totalCount=0');
 });
 
 await assert('GET /api/v1/workspaces/:id/collections — 400 for bad uuid', async () => {
@@ -104,17 +124,30 @@ await assert('GET /api/v1/workspaces/:id/collections — 400 for bad uuid', asyn
 });
 
 await assert('GET /api/v1/workspaces/:id/pages — 200', async () => {
-  const { status } = await request('GET', `/api/v1/workspaces/${ws}/pages`);
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}/pages`);
   eq(status, 200, 'status');
 });
 
+await assert('GET /api/v1/workspaces/:id/pages — has pages, totalCount, pageInfo', async () => {
+  const { data } = await request('GET', `/api/v1/workspaces/${WS}/pages`);
+  if (!Array.isArray(data.pages)) throw new Error('pages not an array');
+  if (typeof data.totalCount !== 'number') throw new Error('missing totalCount');
+  if (!data.pageInfo) throw new Error('missing pageInfo');
+  if (typeof data.pages[0]?.id !== 'string') throw new Error('page missing id');
+});
+
 await assert('GET /api/v1/workspaces/:id/pages — 200 with pagination', async () => {
-  const { status } = await request('GET', `/api/v1/workspaces/${ws}/pages?first=5&offset=0`);
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}/pages?first=5&offset=0`);
   eq(status, 200, 'status');
 });
 
 await assert('GET /api/v1/workspaces/:id/pages — 400 when first > 100', async () => {
-  const { status } = await request('GET', `/api/v1/workspaces/${ws}/pages?first=200`);
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}/pages?first=200`);
+  eq(status, 400, 'status');
+});
+
+await assert('GET /api/v1/workspaces/:id/pages — 400 when offset < 0', async () => {
+  const { status } = await request('GET', `/api/v1/workspaces/${WS}/pages?offset=-1`);
   eq(status, 400, 'status');
 });
 

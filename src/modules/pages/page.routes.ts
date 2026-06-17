@@ -1,14 +1,28 @@
 /**
- * Pages module — REST handlers for /workspaces/:workspaceId/pages and /pages/:pageId.
+ * Pages module — REST handlers for /api/v1/workspaces/:workspaceId/pages.
  */
 
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
 import { gqlRequest } from '../../infra/graphql/client.js';
 import { LIST_PAGES, GET_PAGE } from '../../infra/graphql/queries.js';
-import type { ListPagesResponse, GetPageResponse } from '../../infra/affine/types.js';
+import type { ListPagesResponse } from '../../infra/graphql/queries.js';
+import type { GetPageResponse } from '../../infra/affine/types.js';
 import { NotFoundError } from '../../utils/errors.js';
 import { buildPageUrl } from '../../utils/url.js';
+
+const pageInfoSchema = z.object({
+  hasNextPage: z.boolean(),
+  hasPreviousPage: z.boolean(),
+});
+
+const docSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  mode: z.enum(['Page', 'Edgeless']),
+});
 
 export const pageRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/workspaces/:workspaceId/pages
@@ -26,20 +40,10 @@ export const pageRoutes: FastifyPluginAsync = async (fastify) => {
         response: {
           200: z.object({
             pages: z.array(
-              z.object({
-                id: z.string(),
-                title: z.string(),
-                createDate: z.string(),
-                updatedAt: z.string(),
-                mode: z.enum(['Page', 'Edgeless']),
-                url: z.string(),
-              }),
+              docSchema.extend({ url: z.string() }),
             ),
             totalCount: z.number(),
-            pageInfo: z.object({
-              hasNextPage: z.boolean(),
-              hasPreviousPage: z.boolean(),
-            }),
+            pageInfo: pageInfoSchema,
           }),
         },
       },
@@ -61,7 +65,7 @@ export const pageRoutes: FastifyPluginAsync = async (fastify) => {
       const pages = data.workspace.docs.edges.map(({ node }) => ({
         id: node.id,
         title: node.title,
-        createDate: node.createDate,
+        createdAt: node.createdAt,
         updatedAt: node.updatedAt,
         mode: node.mode,
         url: buildPageUrl(node.id, workspaceId),
@@ -90,12 +94,7 @@ export const pageRoutes: FastifyPluginAsync = async (fastify) => {
           workspaceId: z.string().uuid(),
         }),
         response: {
-          200: z.object({
-            id: z.string(),
-            title: z.string(),
-            createDate: z.string(),
-            updatedAt: z.string(),
-            mode: z.enum(['Page', 'Edgeless']),
+          200: docSchema.extend({
             url: z.string(),
             workspaceId: z.string(),
           }),
@@ -120,7 +119,7 @@ export const pageRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.send({
         id: doc.id,
         title: doc.title,
-        createDate: doc.createDate,
+        createdAt: doc.createdAt,
         updatedAt: doc.updatedAt,
         mode: doc.mode,
         url: buildPageUrl(doc.id, workspaceId),

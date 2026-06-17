@@ -3,6 +3,7 @@
  * Maps AppError instances and unexpected errors to consistent JSON responses.
  */
 
+import { ZodError } from 'zod';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '../utils/errors.js';
 
@@ -11,7 +12,20 @@ export function errorHandler(
   request: FastifyRequest,
   reply: FastifyReply,
 ): void {
-  // Zod validation errors from fastify-type-provider-zod
+  // Zod validation errors (fastify-type-provider-zod wraps them in FastifyError)
+  // Check instanceof ZodError since error.validation is not set on the wrapper
+  if (error instanceof ZodError) {
+    reply.status(400).send({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        details: error.issues,
+      },
+    });
+    return;
+  }
+
+  // fastify-type-provider-zod FastifyError wrapper — check validation property too
   if (error.validation) {
     reply.status(400).send({
       error: {
@@ -31,7 +45,7 @@ export function errorHandler(
         message: error.message,
       },
     };
-    if (error instanceof AppError && 'graphqlErrors' in error) {
+    if ('graphqlErrors' in error) {
       (body.error as Record<string, unknown>)['graphqlErrors'] =
         (error as unknown as { graphqlErrors: unknown[] }).graphqlErrors;
     }
