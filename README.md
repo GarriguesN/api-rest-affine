@@ -102,8 +102,8 @@ All `/api/v1/*` endpoints require the header `x-api-key: <your-key>`.
 |--------|------|-------------|
 | GET | `/api/v1/workspaces/:id/collections` | List collections in a workspace |
 
-> **Note:** These are Copilot context categories, not traditional folders.
-> See [docs/api-map.md](docs/api-map.md) for details.
+> **Note:** The current Affine GraphQL schema does not expose a `collections` field
+> on `WorkspaceType`. This endpoint intentionally returns an empty array.
 
 ### Pages
 
@@ -232,10 +232,11 @@ src/
 
 - **Read-only** in this version. Creating/editing pages requires Socket.IO + Yjs
   (see [docs/api-map.md](docs/api-map.md) for technical context).
-- `workspace.collections` returns Copilot context categories, not traditional
-  folder hierarchies.
+- No `workspace.name` or `workspace.avatarUrl` in the GraphQL schema — workspace
+  identity is via `workspace.owner.name`.
+- `/collections` returns empty (no equivalent field in the GraphQL schema).
 - API stability is not guaranteed — the Affine GraphQL API is not publicly
-  documented. Test against your specific Affine version.
+  documented. Schema verified against notes.nglab.es (Affine v0.26+).
 
 ## Roadmap
 
