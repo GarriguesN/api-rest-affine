@@ -4,6 +4,7 @@
  */
 
 import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import {
@@ -13,6 +14,7 @@ import {
 import { errorHandler } from './plugins/error-handler.js';
 import { authGuard } from './infra/http/auth-guard.js';
 import { healthRoutes } from './modules/health/health.routes.js';
+import { authRoutes } from './modules/auth/auth.routes.js';
 import { workspaceRoutes } from './modules/workspaces/workspace.routes.js';
 import { collectionRoutes } from './modules/collections/collection.routes.js';
 import { pageRoutes } from './modules/pages/page.routes.js';
@@ -29,12 +31,14 @@ export function buildApp(opts: { logger?: boolean } = {}) {
   fastify.setSerializerCompiler(serializerCompiler);
 
   // Plugins
-  fastify.setErrorHandler(errorHandler);
+  void fastify.register(cookie);
+  fastify.setErrorHandler(errorHandler as Parameters<typeof fastify.setErrorHandler>[0]);
   fastify.register(cors, { origin: false });
   fastify.register(helmet, { contentSecurityPolicy: false });
 
-  // Public routes
+  // Public routes (no x-api-key required)
   fastify.register(healthRoutes);
+  fastify.register(authRoutes);
 
   // API v1 — protected by x-api-key
   fastify.register(async (api) => {

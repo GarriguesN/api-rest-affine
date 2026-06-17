@@ -1,10 +1,11 @@
 /**
  * GraphQL client for Affine.
  *
- * Wraps the native fetch API with:
- * - Cookie-based auth injected on every request.
- * - Automatic re-auth on 401 (one retry).
- * - Typed responses.
+ * Two modes:
+ * - Bridge session (default): uses the service account's session from env/startup.
+ * - User session: uses the authenticated user's session cookies (for proxied requests).
+ *
+ * Both modes support automatic re-auth on 401.
  */
 
 import { env } from '../../config/env.js';
@@ -15,12 +16,41 @@ import type { GraphQLResponse } from '../affine/types.js';
 let retryInFlight = false;
 let retryQueue: Array<() => Promise<unknown>> = [];
 
-/** Execute a GraphQL query or mutation against Affine. */
+interface SessionCookies {
+  session: string;
+  csrf: string;
+}
+
+/**
+ * Execute a GraphQL query or mutation using the bridge's service session.
+ * Used for internal bridge operations.
+ */
 export async function gqlRequest<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
-  const { session, csrf } = await getSession();
+  return gqlRequestWithSession(query, variables, await getSession());
+}
+
+/**
+ * Execute a GraphQL query or mutation using a user's session cookies.
+ * Used when proxying requests on behalf of an authenticated user.
+ *
+ * @param cookies - The user's affine_session and affine_csrf_token cookies.
+ */
+export async function gqlRequestForUser<T>(
+  query: string,
+  variables: Record<string, unknown> | undefined,
+  cookies: SessionCookies,
+): Promise<T> {
+  return gqlRequestWithSession(query, variables, cookies);
+}
+
+async function gqlRequestWithSession<T>(
+  query: string,
+  variables: Record<string, unknown> | undefined,
+  { session, csrf }: SessionCookies,
+): Promise<T> {
   const cookieHeader = buildCookieHeader(session, csrf);
 
   const response = await fetch(env.AFFINE_GRAPHQL_URL, {
@@ -34,7 +64,7 @@ export async function gqlRequest<T>(
     credentials: 'include',
   });
 
-  // 401 — try to re-authenticate once
+  // 401 — only retry for bridge session (not user sessions)
   if (response.status === 401) {
     if (!retryInFlight) {
       retryInFlight = true;
@@ -47,7 +77,6 @@ export async function gqlRequest<T>(
       }
     }
 
-    // Wait for the retry to complete, then retry this request
     return new Promise<T>((resolve, reject) => {
       retryQueue.push(async () => {
         try {
