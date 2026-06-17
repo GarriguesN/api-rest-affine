@@ -142,7 +142,7 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/user/me/quota — user storage quota
   fastify.get(
-    '/quota',
+    '/:workspaceId/quota',
     {
       schema: {
         response: {
@@ -179,7 +179,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/access — workspace access
   fastify.get(
-    '/access',
+    '/:workspaceId/access',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -203,7 +203,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/config — workspace feature flags
   fastify.get(
-    '/config',
+    '/:workspaceId/config',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -228,7 +228,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/members — paginated member list
   fastify.get(
-    '/members',
+    '/:workspaceId/members',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -269,7 +269,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/invite-link — workspace invite link
   fastify.get(
-    '/invite-link',
+    '/:workspaceId/invite-link',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -292,7 +292,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/quota — workspace storage quota
   fastify.get(
-    '/quota',
+    '/:workspaceId/quota',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -323,7 +323,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /realtime/workspaces/:id/embedding-progress — AI embedding progress
   fastify.get(
-    '/embedding-progress',
+    '/:workspaceId/embedding-progress',
     {
       schema: {
         params: workspaceParamsSchema,
@@ -377,7 +377,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get(
-    '/docs/:docId/share-state',
+    '/:workspaceId/docs/:docId/share-state',
     {
       schema: {
         params: docParamsSchema,
@@ -400,7 +400,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   fastify.get(
-    '/docs/:docId/grants',
+    '/:workspaceId/docs/:docId/grants',
     {
       schema: {
         params: docParamsSchema,
@@ -444,7 +444,7 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   fastify.get(
-    '/docs/:docId/comments',
+    '/:workspaceId/docs/:docId/comments',
     {
       schema: {
         params: docParamsSchema,

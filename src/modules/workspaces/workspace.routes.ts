@@ -124,7 +124,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
             invitations: z.array(
               z.object({
                 email: z.string(),
-                status: z.string(),
+                inviteId: z.string().nullable(),
+                error: z.record(z.string(), z.unknown()).nullable(),
               }),
             ),
           }),
@@ -135,7 +136,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       const { workspaceId } = request.params as { workspaceId: string };
       const { emails } = z.object({ emails: z.array(z.string().email()) }).parse(request.body);
 
-      const data = await gqlRequest<{ inviteMembers: { email: string; status: string }[] }>(
+      const data = await gqlRequest<{ inviteMembers: { email: string; inviteId: string | null; error: Record<string, unknown> | null }[] }>(
         INVITE_MEMBERS,
         { workspaceId, emails },
       );

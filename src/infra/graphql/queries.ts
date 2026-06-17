@@ -136,7 +136,8 @@ export const INVITE_MEMBERS = /* GraphQL */ `
   mutation InviteMembers($workspaceId: String!, $emails: [String!]!) {
     inviteMembers(workspaceId: $workspaceId, emails: $emails) {
       email
-      status
+      inviteId
+      error
     }
   }
 `;
