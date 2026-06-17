@@ -1,0 +1,132 @@
+{
+  "generated": "2026-06-17T15:17:00+02:00",
+  "source": "notes.nglab.es",
+  "auth": "garriguesnacho@gmail.com (Owner)",
+  "note": "workspace.name NOT available in GraphQL for non-admin users. Workaround: use owner.name",
+  "workspaces": [
+    {
+      "id": "58cb2776-ec01-4242-824e-a930aa35671d",
+      "name_note": "No workspace.name in GraphQL. Display name from owner: nahtio",
+      "displayName": "nahtio (EDFormación)",
+      "createdAt": "2026-06-17T07:37:22.924Z",
+      "initialized": true,
+      "enableAi": false,
+      "enableSharing": true,
+      "public": false,
+      "role": "Owner",
+      "memberCount": 2,
+      "owner": {
+        "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+        "name": "nahtio",
+        "email": "garriguesnacho@gmail.com"
+      },
+      "quota": {
+        "plan": "Pro",
+        "memberLimit": 10,
+        "storageQuota_bytes": 107374182400,
+        "storageQuota_hr": "100 GB",
+        "usedStorageQuota_bytes": 852038,
+        "usedStorageQuota_hr": "832 KB",
+        "overcapacityMemberCount": -8,
+        "historyPeriod_days": 30,
+        "blobLimit_bytes": 104857600
+      },
+      "team": false,
+      "members": [
+        { "id": "f15aaf23-f698-4164-98d8-e0599ad95385", "name": "nahtio", "email": "garriguesnacho@gmail.com" },
+        { "id": "7819f184-369c-45ae-a7cf-eb50213010b8", "name": "hermes", "email": "hermes@nglab.es" }
+      ],
+      "blobsSize_bytes": 68630,
+      "blobsSize_hr": "67 KB",
+      "pages": [
+        { "id": "0AwKW7_enx",   "title": "Flashcards to-do",                             "createdAt": "2026-06-17T09:28:47.449Z", "updatedAt": "2026-06-17T09:47:34.712Z", "mode": "Page" },
+        { "id": "54ZD4PwfVc-OYMgB8fZ0T", "title": null,                                   "createdAt": "2026-06-17T09:44:28.123Z", "updatedAt": "2026-06-17T09:44:28.123Z", "mode": "Page" },
+        { "id": "iu2GWNpX0W",   "title": "GitLab Runner - Configuracion",               "createdAt": "2026-06-17T09:28:46.128Z", "updatedAt": "2026-06-17T09:43:45.443Z", "mode": "Page" },
+        { "id": "EbNRn2tHjB",   "title": "Guía de releases — Moodle Vitaminado",         "createdAt": "2026-06-17T09:28:47.351Z", "updatedAt": "2026-06-17T09:40:52.829Z", "mode": "Page" },
+        { "id": "VFAIt_USAnX9jo7el7DpP", "title": null,                                   "createdAt": "2026-06-17T09:39:30.472Z", "updatedAt": "2026-06-17T09:39:30.472Z", "mode": "Page" },
+        { "id": "WHhrdpWHjm",   "title": "Hacer funcionar plugins Informes y Soporte",   "createdAt": "2026-06-17T09:28:46.637Z", "updatedAt": "2026-06-17T09:29:49.425Z", "mode": "Page" },
+        { "id": "GPiyMatHk2",   "title": "QA Backlog Bugs",                             "createdAt": "2026-06-17T09:28:47.031Z", "updatedAt": "2026-06-17T09:28:47.031Z", "mode": "Page" },
+        { "id": "Y_4PQeZBtd",   "title": "Plan revision Badge Progress",               "createdAt": "2026-06-17T09:28:46.381Z", "updatedAt": "2026-06-17T09:28:46.381Z", "mode": "Page" },
+        { "id": "yoIrAP5BGy",   "title": "Guía de releases — Plugins Moodle EDF",       "createdAt": "2026-06-17T09:28:45.836Z", "updatedAt": "2026-06-17T09:28:45.836Z", "mode": "Page" },
+        { "id": "U4Y84m5kM6F_WbBBp6BO9", "title": null,                                   "createdAt": "2026-06-17T08:49:54.253Z", "updatedAt": "2026-06-17T08:49:54.253Z", "mode": "Page" },
+        { "id": "ZSP-SUc9A3ebzT-1WWANm", "title": null,                                   "createdAt": "2026-06-17T08:06:44.838Z", "updatedAt": "2026-06-17T08:06:44.838Z", "mode": "Page" },
+        { "id": "uVwqDHY0536cS6C57wGjH", "title": "hola",                                 "createdAt": "2026-06-17T08:02:10.056Z", "updatedAt": "2026-06-17T08:02:10.056Z", "mode": "Page" },
+        { "id": "YgxO9m7Cga",   "title": "Getting Started ",                            "createdAt": "2026-06-17T07:37:24.026Z", "updatedAt": "2026-06-17T07:45:26.634Z", "mode": "Page" },
+        { "id": "BdO6tl5EuSy2Ys2abF8ni", "title": null,                                   "createdAt": "2026-06-17T07:45:03.066Z", "updatedAt": "2026-06-17T07:45:03.066Z", "mode": "Page" },
+        { "id": "C9Rs42EsT2",   "title": "How to use folder and Tags",                 "createdAt": "2026-06-17T07:37:24.109Z", "updatedAt": "2026-06-17T07:37:24.109Z", "mode": "Page" }
+      ],
+      "totalPages": 15,
+      "pagesWithTitle": 10
+    },
+    {
+      "id": "5ac4e67f-0c4e-44e4-a9b6-e8d2ffda8504",
+      "name_note": "No workspace.name in GraphQL. Display name from owner: nahtio",
+      "displayName": "nahtio (EDFormación)",
+      "createdAt": "2026-06-17T09:48:45.792Z",
+      "initialized": true,
+      "enableAi": true,
+      "enableSharing": true,
+      "public": false,
+      "role": "Owner",
+      "memberCount": 1,
+      "owner": {
+        "id": "f15aaf23-f698-4164-98d8-e0599ad95385",
+        "name": "nahtio",
+        "email": "garriguesnacho@gmail.com"
+      },
+      "quota": {
+        "plan": "Pro",
+        "memberLimit": 10,
+        "storageQuota_bytes": 107374182400,
+        "storageQuota_hr": "100 GB",
+        "usedStorageQuota_bytes": 852038,
+        "usedStorageQuota_hr": "832 KB",
+        "overcapacityMemberCount": -9,
+        "historyPeriod_days": 30,
+        "blobLimit_bytes": 104857600
+      },
+      "team": false,
+      "members": [
+        { "id": "f15aaf23-f698-4164-98d8-e0599ad95385", "name": "nahtio", "email": "garriguesnacho@gmail.com" }
+      ],
+      "blobsSize_bytes": 783408,
+      "blobsSize_hr": "765 KB",
+      "pages": [
+        { "id": "AdJIcsj28S", "title": "Getting Started ",  "createdAt": "2026-06-17T09:48:46.827Z", "updatedAt": "2026-06-17T11:29:26.373Z", "mode": "Page" },
+        { "id": "eemzAVwFfu", "title": "guia-affine",       "createdAt": "2026-06-17T11:23:12.233Z", "updatedAt": "2026-06-17T11:23:16.141Z", "mode": "Page" },
+        { "id": "X4V_KRGHSF0mN7BuY5XgT", "title": "2026-06-17", "createdAt": "2026-06-17T09:50:27.229Z", "updatedAt": "2026-06-17T09:52:36.447Z", "mode": "Page" },
+        { "id": "Cjcl1AnW-l", "title": "How to use folder and Tags", "createdAt": "2026-06-17T09:48:46.902Z", "updatedAt": "2026-06-17T09:51:16.111Z", "mode": "Page" }
+      ],
+      "totalPages": 4,
+      "pagesWithTitle": 4
+    }
+  ],
+  "per_page_analytics_example": {
+    "pageId": "iu2GWNpX0W",
+    "pageTitle": "GitLab Runner - Configuracion",
+    "analytics": {
+      "generatedAt": "2026-06-17T15:14:53.210Z",
+      "summary": { "totalViews": 0, "uniqueViews": 0, "guestViews": 0, "lastAccessedAt": null },
+      "window": { "bucket": "Day", "effectiveSize": 7, "requestedSize": 7, "timezone": "UTC", "from": "2026-06-11", "to": "2026-06-17" }
+    },
+    "permissions": {
+      "Doc_Read": true, "Doc_Update": true, "Doc_Delete": true, "Doc_Duplicate": true,
+      "Doc_Comments_Read": true, "Doc_Comments_Create": true, "Doc_Comments_Delete": true,
+      "Doc_Properties_Read": true, "Doc_Properties_Update": true,
+      "Doc_Users_Read": true, "Doc_Users_Manage": true,
+      "Doc_Trash": true, "Doc_Restore": true, "Doc_Copy": true, "Doc_Publish": true, "Doc_TransferOwner": true
+    },
+    "grantedUsers": [
+      { "user": { "id": "f15aaf23-f698-4164-98d8-e0599ad95385", "name": "nahtio", "email": "garriguesnacho@gmail.com" }, "role": "Owner" }
+    ]
+  },
+  "graphql_findings": {
+    "workspace_name": "NOT AVAILABLE in GraphQL for non-admin users. AdminWorkspace.name exists but requires admin role. Workaround: owner.name",
+    "page_titles_in_bulk": "NOT AVAILABLE in docs pagination. title=null in bulk. Workaround: fetch individually or use recentlyUpdatedDocs (limit 20)",
+    "collections": "NOT AVAILABLE. workspace.collections does not exist in schema.",
+    "workspace_avatarUrl": "NOT AVAILABLE on WorkspaceType. owner.avatarUrl is available.",
+    "rest_api": "All REST endpoints return SPA HTML (nginx catch-all). No JSON REST API accessible.",
+    "searchDocs": "Requires copilot/AI embedding configured. Returns 'Search provider not found.' for both workspaces.",
+    "admin_api": "Requires admin role. Returns 'Resource not found.' for non-admin users."
+  }
+}

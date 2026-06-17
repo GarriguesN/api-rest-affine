@@ -1,80 +1,90 @@
-# Campos adicionales descubiertos del GraphQL de Affine
+# Campos GraphQL descubiertos — notes.nglab.es
 
-Generado via introspección en `notes.nglab.es` (2026-06-17).
+Generado via live introspection (2026-06-17).
 
-## WorkspaceType — más campos disponibles
+## ✅ Campos CONFIRMADOS disponibles
 
+### WorkspaceType
 ```graphql
 workspace {
-  id createdAt initialized enableAi enableSharing
-  public role memberCount team
-  owner { id name email avatarUrl }
+  id, createdAt, initialized, enableAi, enableSharing
+  public, role, memberCount, team
+  owner { id, name, email, avatarUrl }  # ← name del owner, NO del workspace
   quota {
-    name           # "Pro"
-    memberLimit    # 10
-    storageQuota   # 107374182400 (bytes)
-    usedStorageQuota # 852038
+    name          # "Pro"
+    memberLimit   # 10
+    storageQuota  # bytes
+    usedStorageQuota
     overcapacityMemberCount
-    historyPeriod  # 2592000000 (ms = 30 días)
-    blobLimit      # 104857600
+    historyPeriod # ms
+    blobLimit
   }
-  subscription { plan status recurring provider }   # null en self-hosted
-  members { id name email }
-  blobsSize      # bytes usados en blobs
-  # NOTA: no workspace.name ni workspace.avatarUrl
+  subscription { plan, status, recurring, provider }  # null en self-hosted
+  members { id, name, email }
+  blobsSize  # bytes
 }
 ```
 
-## DocType — campos extra (además de id, title, createdAt, updatedAt, mode)
-
+### DocType (página individual con GET /doc)
 ```graphql
 doc(docId: "...") {
-  id title createdAt updatedAt mode public
-  workspaceId creatorId lastUpdaterId
-  defaultRole permissions
-  public grantedUsersList(pagination: {first: N}) {
-    totalCount
-    edges { node { user { id name email } role } }
-  }
+  id, title, createdAt, updatedAt, mode
+  public
   analytics {
-    generatedAt       # timestamp de generación del informe
-    summary {
-      totalViews     # vistas totales
-      uniqueViews    # vistas únicas
-      guestViews     # visitas de invitados
-      lastAccessedAt # última vez accedido
-    }
-    series {         # serie temporal (Daily por defecto)
-      date           # "2026-06-11T00:00:00.000Z"
-      totalViews
-      uniqueViews
-      guestViews
-    }
-    window {
-      bucket          # "Day"
-      effectiveSize
-      requestedSize
-      timezone        # "UTC"
-      from to         # rango de fechas
-    }
+    generatedAt
+    summary { totalViews, uniqueViews, guestViews, lastAccessedAt }
+    series { date, totalViews, uniqueViews, guestViews }
+    window { bucket, effectiveSize, requestedSize, timezone, from, to }
+  }
+  permissions {
+    Doc_Read, Doc_Update, Doc_Delete, Doc_Duplicate
+    Doc_Comments_*
+    Doc_Properties_*
+    Doc_Users_Read, Doc_Users_Manage
+    Doc_Trash, Doc_Restore, Doc_Copy, Doc_Publish, Doc_TransferOwner
+  }
+  grantedUsersList(pagination: {first:N}) {
+    totalCount
+    edges { node { user { id, name, email }, role } }
   }
 }
 ```
 
-## DocPermissions — campos booleanos
-
+### recentlyUpdatedDocs — CON títulos (bulk, limit 20)
+```graphql
+recentlyUpdatedDocs(pagination: {first: 20}) {
+  totalCount
+  edges { node { id, title, updatedAt, mode, createdAt } }
+}
 ```
-Doc_Read, Doc_Update, Doc_Delete, Doc_Duplicate
-Doc_Comments_Read, Doc_Comments_Create, Doc_Comments_Delete, Doc_Comments_Resolve
-Doc_Properties_Read, Doc_Properties_Update
-Doc_Users_Read, Doc_Users_Manage
-Doc_Trash, Doc_Restore, Doc_Copy, Doc_Publish, Doc_TransferOwner
-```
+> A diferencia de `docs`, ESTE campo SÍ devuelve títulos. Limitado a ~20 resultados ordenados por updatedAt.
 
-## Campos NO disponibles (confirmados ausentes)
+## ❌ Campos CONFIRMADOS AUSENTES
 
-- `workspace.name` — no existe
-- `workspace.avatarUrl` — no existe (owner sí tiene)
-- `workspace.collections` — no existe
-- `DocType.title` en bulk list — es null; se necesita fetch individual
-- `DocTypeEdge.pageInfo` — pageInfo está en PaginatedDocType, no en el edge
+| Campo | Nota |
+|-------|------|
+| `workspace.name` | No existe en GraphQL para usuarios no-admin |
+| `workspace.avatarUrl` | No existe en WorkspaceType |
+| `workspace.collections` | No existe |
+| `DocType.title` en bulk (`docs`) | Es null en paginación; requiere fetch individual |
+| `DocTypeEdge.pageInfo` | pageInfo está en PaginatedDocType, no en el edge |
+
+## 🔒 Requieren permisos especiales
+
+| Campo / Query | Requisito |
+|---------------|-----------|
+| `AdminWorkspace.name` | Rol admin |
+| `adminWorkspaces` / `adminWorkspace` | Rol admin |
+| `searchDocs` | AI embedding configurado ("Search provider not found." si no) |
+
+## REST API
+
+Todos los endpoints REST (`/api/workspace/*`, `/api/user/*`) devuelven HTML del SPA.
+Solo funcionan como JSON: `/graphql` y `/api/auth/sign-in`.
+
+## Soluciones de contorno
+
+1. **Nombre del workspace** → usar `workspace.owner.name`
+2. **Títulos de páginas en bulk** → `recentlyUpdatedDocs(first: 20)` con títulos, o fetch individual por página
+3. **Colecciones** → no disponible via API GraphQL/REST
+4. **Títulos en lista completa** → no hay forma vía GraphQL; habría que hacer N requests individuales
