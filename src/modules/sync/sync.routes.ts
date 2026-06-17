@@ -16,7 +16,7 @@
 
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
-import { JwtMissingError, JwtInvalidError } from '../../utils/errors.js';
+import { JwtMissingError, JwtInvalidError, NotImplementedError } from '../../utils/errors.js';
 import { AffineSocketClient } from '../../infra/socket/client.js';
 import { parseDocBinary } from '../../utils/yjs-parser.js';
 
@@ -263,10 +263,21 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParams.parse(request.params);
 
-      await withSocket(sessionToken, async (client) => {
-        await client.spaceJoin('workspace', workspaceId);
-        await client.spaceDeleteDoc('workspace', workspaceId, docId);
-      });
+      try {
+        await withSocket(sessionToken, async (client) => {
+          await client.spaceJoin('workspace', workspaceId);
+          await client.spaceDeleteDoc('workspace', workspaceId, docId);
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('ack timeout')) {
+          throw new NotImplementedError(
+            'space:delete-doc is not available on this AFFiNE instance. ' +
+            'The RealtimeGateway delete-doc operation is not implemented on self-hosted AFFiNE.',
+          );
+        }
+        throw err;
+      }
       return { ok: true };
     },
   );

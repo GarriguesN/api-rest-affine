@@ -68,3 +68,9 @@ export class JwtInvalidError extends AppError {
     super(reason, 401, 'JWT_INVALID');
   }
 }
+
+export class NotImplementedError extends AppError {
+  constructor(reason: string) {
+    super(reason, 501, 'NOT_IMPLEMENTED');
+  }
+}
