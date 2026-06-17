@@ -31,8 +31,9 @@ const API_KEY = process.env.API_KEY ?? (() => {
   process.exit(1);
 })();
 
-// Real workspace from hermes@nglab.es on notes.nglab.es
+// Real workspaces from garriguesnacho@gmail.com on notes.nglab.es
 const WS = process.env.TEST_WORKSPACE_ID ?? '58cb2776-ec01-4242-824e-a930aa35671d';
+const WS2 = '5ac4e67f-0c4e-44e4-a9b6-e8d2ffda8504';
 
 async function request(method, path, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -149,6 +150,18 @@ await assert('GET /api/v1/workspaces/:id/pages — 400 when first > 100', async 
 await assert('GET /api/v1/workspaces/:id/pages — 400 when offset < 0', async () => {
   const { status } = await request('GET', `/api/v1/workspaces/${WS}/pages?offset=-1`);
   eq(status, 400, 'status');
+});
+
+await assert('GET /api/v1/workspaces — returns at least 2 workspaces', async () => {
+  const { data } = await request('GET', '/api/v1/workspaces');
+  if (data.workspaces.length < 2) throw new Error(`expected >= 2 workspaces, got ${data.workspaces.length}`);
+});
+
+await assert('GET /api/v1/workspaces/:id (second workspace) — 200 with pages', async () => {
+  const { status } = await request('GET', `/api/v1/workspaces/${WS2}`);
+  eq(status, 200, 'status');
+  const { data } = await request('GET', `/api/v1/workspaces/${WS2}/pages`);
+  if (!Array.isArray(data.pages)) throw new Error('pages not an array');
 });
 
 console.log('\n✅ Smoke tests complete');
