@@ -24,6 +24,7 @@
     "fastify-type-provider-zod": "^2.1.0",
     "graphql": "^16.10.0",
     "graphql-request": "^7.1.2",
+    "yjs": "^13.6.31",
     "zod": "^3.24.1"
   },
   "devDependencies": {

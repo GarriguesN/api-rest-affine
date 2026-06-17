@@ -16,6 +16,8 @@ import { authGuard } from './infra/http/auth-guard.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { realtimeRoutes } from './modules/realtime/realtime.routes.js';
+import { syncRoutes } from './modules/sync/sync.routes.js';
+import { blobRoutes } from './modules/blobs/blob.routes.js';
 import { workspaceRoutes } from './modules/workspaces/workspace.routes.js';
 import { collectionRoutes } from './modules/collections/collection.routes.js';
 import { pageRoutes } from './modules/pages/page.routes.js';
@@ -45,6 +47,8 @@ export function buildApp(opts: { logger?: boolean } = {}) {
   fastify.register(async (api) => {
     api.addHook('onRequest', authGuard);
     api.register(realtimeRoutes);
+    api.register(syncRoutes);
+    api.register(blobRoutes);
     api.register(workspaceRoutes);
     api.register(collectionRoutes);
     api.register(pageRoutes);

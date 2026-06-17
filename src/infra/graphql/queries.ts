@@ -119,3 +119,31 @@ export const PLACEHOLDER_CREATE_PAGE = /* GraphQL */ `
     __typename
   }
 `;
+
+// ---------------------------------------------------------------------------
+// Workspace mutations
+// ---------------------------------------------------------------------------
+
+/** Delete a workspace. Requires Owner role. */
+export const DELETE_WORKSPACE = /* GraphQL */ `
+  mutation DeleteWorkspace($id: String!) {
+    deleteWorkspace(id: $id)
+  }
+`;
+
+/** Invite members to a workspace by email. */
+export const INVITE_MEMBERS = /* GraphQL */ `
+  mutation InviteMembers($workspaceId: String!, $emails: [String!]!) {
+    inviteMembers(workspaceId: $workspaceId, emails: $emails) {
+      email
+      status
+    }
+  }
+`;
+
+/** Leave a workspace. */
+export const LEAVE_WORKSPACE = /* GraphQL */ `
+  mutation LeaveWorkspace($workspaceId: String!) {
+    leaveWorkspace(workspaceId: $workspaceId)
+  }
+`;

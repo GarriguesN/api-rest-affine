@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
 import { gqlRequest } from '../../infra/graphql/client.js';
-import { LIST_WORKSPACES, GET_WORKSPACE } from '../../infra/graphql/queries.js';
+import { LIST_WORKSPACES, GET_WORKSPACE, DELETE_WORKSPACE, INVITE_MEMBERS, LEAVE_WORKSPACE } from '../../infra/graphql/queries.js';
 import type { ListWorkspacesResponse, GetWorkspaceResponse } from '../../infra/graphql/queries.js';
 import { NotFoundError } from '../../utils/errors.js';
 
@@ -83,6 +83,84 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return reply.send({ workspace: data.workspace });
+    },
+  );
+
+  // DELETE /api/v1/workspaces/:workspaceId
+  // Delete a workspace (Owner only)
+  fastify.delete(
+    '/workspaces/:workspaceId',
+    {
+      schema: {
+        params: z.object({
+          workspaceId: z.string().uuid(),
+        }),
+        response: {
+          200: z.object({ ok: z.boolean() }),
+        },
+      },
+    },
+    async (request) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      await gqlRequest(DELETE_WORKSPACE, { id: workspaceId });
+      return { ok: true };
+    },
+  );
+
+  // POST /api/v1/workspaces/:workspaceId/invite
+  // Invite members by email
+  fastify.post(
+    '/workspaces/:workspaceId/invite',
+    {
+      schema: {
+        params: z.object({
+          workspaceId: z.string().uuid(),
+        }),
+        body: z.object({
+          emails: z.array(z.string().email()).min(1),
+        }),
+        response: {
+          200: z.object({
+            invitations: z.array(
+              z.object({
+                email: z.string(),
+                status: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    async (request) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      const { emails } = z.object({ emails: z.array(z.string().email()) }).parse(request.body);
+
+      const data = await gqlRequest<{ inviteMembers: { email: string; status: string }[] }>(
+        INVITE_MEMBERS,
+        { workspaceId, emails },
+      );
+      return { invitations: data.inviteMembers };
+    },
+  );
+
+  // POST /api/v1/workspaces/:workspaceId/leave
+  // Leave a workspace
+  fastify.post(
+    '/workspaces/:workspaceId/leave',
+    {
+      schema: {
+        params: z.object({
+          workspaceId: z.string().uuid(),
+        }),
+        response: {
+          200: z.object({ ok: z.boolean() }),
+        },
+      },
+    },
+    async (request) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      await gqlRequest(LEAVE_WORKSPACE, { workspaceId });
+      return { ok: true };
     },
   );
 };
