@@ -1,13 +1,14 @@
 /**
  * AFFiNE Socket.IO client infrastructure.
  *
- * Manages Socket.IO connections to the AFFiNE server with JWT auth.
+ * Manages Socket.IO connections to the AFFiNE server with session-token auth.
  * Supports two protocols:
  * - RealtimeGateway: live query subscriptions (realtime:request, realtime:subscribe)
  * - SpaceSyncGateway: Yjs doc sync (space:join, space:load-doc, space:push-doc-update)
  *
- * Auth: JWT token passed via Socket.IO handshake auth.
- * The JWT is obtained via POST /api/auth/native/exchange from an exchangeCode.
+ * Auth: Session token (affine_session) passed via Socket.IO handshake auth.
+ * On self-hosted instances, use the session token directly — the /native/exchange
+ * endpoint is cloud-only. Auth header format: Authorization: Bearer <sessionToken>
  */
 
 import { io, Socket } from 'socket.io-client';
@@ -112,8 +113,15 @@ interface ClientToServerEvents {
 export type AffineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export interface SocketOptions {
-  /** JWT token for Socket.IO handshake auth (from /auth/token/exchange) */
-  jwtToken: string;
+  /**
+   * Session token for Socket.IO handshake auth.
+   * On self-hosted: use the affine_session cookie value.
+   * The session token is returned by /auth/login as `sessionCookie`.
+   * Authorization header format for sync routes: Bearer <sessionToken>
+   */
+  sessionToken: string;
+  /** CSRF token for extraHeaders (optional but recommended) */
+  csrfToken?: string;
   /** Auto-connect on creation (default: true) */
   autoConnect?: boolean;
   /** Transport: prefer polling for self-hosted (default: ['polling']) */
@@ -128,7 +136,7 @@ export interface SocketOptions {
 // Socket factory
 // ---------------------------------------------------------------------------
 
-const DEFAULT_OPTIONS: Required<Omit<SocketOptions, 'jwtToken'>> = {
+const DEFAULT_OPTIONS: Required<Omit<SocketOptions, 'sessionToken' | 'csrfToken'>> = {
   autoConnect: true,
   transports: ['polling'], // self-hosted may not support websocket well
   reconnectionAttempts: 5,
@@ -136,18 +144,18 @@ const DEFAULT_OPTIONS: Required<Omit<SocketOptions, 'jwtToken'>> = {
 };
 
 /**
- * Create a new AFFiNE Socket.IO socket instance with JWT auth.
+ * Create a new AFFiNE Socket.IO socket instance with session-token auth.
  * Each call creates a fresh socket — caller manages lifecycle (connect/disconnect).
  */
 export function createAffineSocket(options: SocketOptions): AffineSocket {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const socketUrl = `${env.AFFINE_BASE_URL}/socket.io`;
+  const socketUrl = `${env.AFFINE_BASE_URL}`;
 
   const socket = io(socketUrl, {
-    // Auth: JWT token with explicit tokenType (required by AFFiNE server)
+    // Auth: session token with tokenType 'session' (self-hosted compatible)
     auth: {
-      token: options.jwtToken,
-      tokenType: 'jwt',
+      token: options.sessionToken,
+      tokenType: 'session',
     },
     // Transport: polling preferred for self-hosted; websocket optional
     transports: opts.transports,
@@ -157,9 +165,10 @@ export function createAffineSocket(options: SocketOptions): AffineSocket {
     reconnectionAttempts: opts.reconnectionAttempts,
     reconnectionDelay: opts.reconnectionDelay,
     reconnectionDelayMax: 30_000,
-    // Version header
+    // Version header + CSRF token when provided
     extraHeaders: {
       'x-affine-client-version': CLIENT_VERSION,
+      ...(options.csrfToken && { 'x-affine-csrf-token': options.csrfToken }),
     },
   } as Parameters<typeof io>[1]) as AffineSocket;
 
@@ -471,7 +480,8 @@ function base64ToUint8Array(base64: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 export interface OneShotOptions {
-  jwtToken: string;
+  sessionToken: string;
+  csrfToken?: string;
   timeoutMs?: number;
 }
 
@@ -484,7 +494,10 @@ export async function realtimeRequest<Op extends RealtimeRequestName>(
   input: RealtimeRequestInputOf<Op>,
   options: OneShotOptions,
 ): Promise<RealtimeRequestOutputOf<Op>> {
-  const client = new AffineSocketClient({ jwtToken: options.jwtToken });
+  const client = new AffineSocketClient({
+    sessionToken: options.sessionToken,
+    ...(options.csrfToken ? { csrfToken: options.csrfToken } : {}),
+  });
   await client.connect();
   try {
     return await client.realtimeRequest(op, input);

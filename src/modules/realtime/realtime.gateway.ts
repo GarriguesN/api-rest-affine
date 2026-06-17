@@ -38,9 +38,9 @@ import type {
 async function execute<Op extends RealtimeRequestName>(
   op: Op,
   input: RealtimeRequestInputOf<Op>,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<Op>> {
-  return realtimeRequest(op, input, { jwtToken, timeoutMs: 20_000 });
+  return realtimeRequest(op, input, { sessionToken, timeoutMs: 20_000 });
 }
 
 // ---------------------------------------------------------------------------
@@ -53,9 +53,9 @@ async function execute<Op extends RealtimeRequestName>(
  */
 export async function getWorkspaceAccess(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'workspace.access.get'>> {
-  return execute('workspace.access.get', { workspaceId }, jwtToken);
+  return execute('workspace.access.get', { workspaceId }, sessionToken);
 }
 
 /**
@@ -64,9 +64,9 @@ export async function getWorkspaceAccess(
  */
 export async function getWorkspaceConfig(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'workspace.config.get'>> {
-  return execute('workspace.config.get', { workspaceId }, jwtToken);
+  return execute('workspace.config.get', { workspaceId }, sessionToken);
 }
 
 /**
@@ -75,14 +75,14 @@ export async function getWorkspaceConfig(
  */
 export async function getWorkspaceMembers(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
   options?: { skip?: number; take?: number; query?: string },
 ): Promise<RealtimeRequestOutputOf<'workspace.members.get'>> {
   const input = { workspaceId };
   if (options?.skip !== undefined) (input as Record<string, unknown>).skip = options.skip;
   if (options?.take !== undefined) (input as Record<string, unknown>).take = options.take;
   if (options?.query !== undefined) (input as Record<string, unknown>).query = options.query;
-  return execute('workspace.members.get', input as RealtimeRequestInputOf<'workspace.members.get'>, jwtToken);
+  return execute('workspace.members.get', input as RealtimeRequestInputOf<'workspace.members.get'>, sessionToken);
 }
 
 /**
@@ -91,9 +91,9 @@ export async function getWorkspaceMembers(
  */
 export async function getWorkspaceInviteLink(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'workspace.invite-link.get'>> {
-  return execute('workspace.invite-link.get', { workspaceId }, jwtToken);
+  return execute('workspace.invite-link.get', { workspaceId }, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,9 +107,9 @@ export async function getWorkspaceInviteLink(
 export async function getDocShareState(
   workspaceId: string,
   docId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'doc.share-state.get'>> {
-  return execute('doc.share-state.get', { workspaceId, docId }, jwtToken);
+  return execute('doc.share-state.get', { workspaceId, docId }, sessionToken);
 }
 
 /**
@@ -119,7 +119,7 @@ export async function getDocShareState(
 export async function getDocGrants(
   workspaceId: string,
   docId: string,
-  jwtToken: string,
+  sessionToken: string,
   pagination?: { first: number; after?: string },
 ): Promise<RealtimeRequestOutputOf<'doc.grants.get'>> {
   const input: RealtimeRequestInputOf<'doc.grants.get'> = {
@@ -129,7 +129,7 @@ export async function getDocGrants(
       ? { first: pagination.first, ...(pagination.after !== undefined ? { after: pagination.after } : {}) }
       : { first: 20 },
   };
-  return execute('doc.grants.get', input, jwtToken);
+  return execute('doc.grants.get', input, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ export async function getDocGrants(
 export async function getCommentChanges(
   workspaceId: string,
   docId: string,
-  jwtToken: string,
+  sessionToken: string,
   options?: { after?: string; first?: number },
 ): Promise<RealtimeRequestOutputOf<'comment.changes.get'>> {
   const input: RealtimeRequestInputOf<'comment.changes.get'> = {
@@ -152,7 +152,7 @@ export async function getCommentChanges(
     ...(options?.after !== undefined ? { after: options.after } : {}),
     first: options?.first ?? 20,
   };
-  return execute('comment.changes.get', input, jwtToken);
+  return execute('comment.changes.get', input, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,9 +164,9 @@ export async function getCommentChanges(
  * Returns the current user's profile.
  */
 export async function getUserProfile(
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'user.profile.get'>> {
-  return execute('user.profile.get', {}, jwtToken);
+  return execute('user.profile.get', {}, sessionToken);
 }
 
 /**
@@ -174,9 +174,9 @@ export async function getUserProfile(
  * Returns the current user's notification settings.
  */
 export async function getUserSettings(
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'user.settings.get'>> {
-  return execute('user.settings.get', {}, jwtToken);
+  return execute('user.settings.get', {}, sessionToken);
 }
 
 /**
@@ -184,9 +184,9 @@ export async function getUserSettings(
  * Returns the user's personal access tokens (for API access).
  */
 export async function getUserAccessTokens(
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'user.access-tokens.get'>> {
-  return execute('user.access-tokens.get', {}, jwtToken);
+  return execute('user.access-tokens.get', {}, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +198,9 @@ export async function getUserAccessTokens(
  * Returns the unread notification count.
  */
 export async function getNotificationCount(
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'notification.count.get'>> {
-  return execute('notification.count.get', {}, jwtToken);
+  return execute('notification.count.get', {}, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,9 +213,9 @@ export async function getNotificationCount(
  */
 export async function getWorkspaceEmbeddingProgress(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'workspace.embedding.progress.get'>> {
-  return execute('workspace.embedding.progress.get', { workspaceId }, jwtToken);
+  return execute('workspace.embedding.progress.get', { workspaceId }, sessionToken);
 }
 
 /**
@@ -224,13 +224,13 @@ export async function getWorkspaceEmbeddingProgress(
  */
 export async function getCopilotTranscriptTask(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
   options?: { blobId?: string; taskId?: string },
 ): Promise<RealtimeRequestOutputOf<'copilot.transcript.task.get'>> {
   const input: RealtimeRequestInputOf<'copilot.transcript.task.get'> = { workspaceId };
   if (options?.blobId !== undefined) input.blobId = options.blobId;
   if (options?.taskId !== undefined) input.taskId = options.taskId;
-  return execute('copilot.transcript.task.get', input, jwtToken);
+  return execute('copilot.transcript.task.get', input, sessionToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,9 +242,9 @@ export async function getCopilotTranscriptTask(
  * Returns the current user's storage quota state.
  */
 export async function getUserQuotaState(
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'user.quota-state.get'>> {
-  return execute('user.quota-state.get', {}, jwtToken);
+  return execute('user.quota-state.get', {}, sessionToken);
 }
 
 /**
@@ -253,7 +253,7 @@ export async function getUserQuotaState(
  */
 export async function getWorkspaceQuotaState(
   workspaceId: string,
-  jwtToken: string,
+  sessionToken: string,
 ): Promise<RealtimeRequestOutputOf<'workspace.quota-state.get'>> {
-  return execute('workspace.quota-state.get', { workspaceId }, jwtToken);
+  return execute('workspace.quota-state.get', { workspaceId }, sessionToken);
 }

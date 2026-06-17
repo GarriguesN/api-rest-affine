@@ -4,14 +4,14 @@
  * Manages Yjs document sync over AFFiNE's Socket.IO SpaceSyncGateway.
  * All routes require:
  *   - x-api-key: bridge API key
- *   - Authorization: Bearer <jwt> — JWT token from /auth/token/exchange
+ *   - Authorization: Bearer <sessionToken> — session token from /auth/login
  *
  * Route structure:
- *   /sync/workspaces/:workspaceId/join       → join workspace room
- *   /sync/workspaces/:workspaceId/docs     → list doc timestamps
- *   /sync/workspaces/:workspaceId/docs/:docId      → load doc binary
- *   /sync/workspaces/:workspaceId/docs/:docId      → push doc update (PUT)
- *   /sync/workspaces/:workspaceId/docs/:docId      → delete doc (DELETE)
+ *   /sync/workspaces/:workspaceId/join           → join workspace room
+ *   /sync/workspaces/:workspaceId/docs           → list doc timestamps
+ *   /sync/workspaces/:workspaceId/docs/:docId    → load doc binary
+ *   /sync/workspaces/:workspaceId/docs/:docId    → push doc update (PUT)
+ *   /sync/workspaces/:workspaceId/docs/:docId    → delete doc (DELETE)
  */
 
 import { z } from 'zod';
@@ -21,14 +21,14 @@ import { AffineSocketClient } from '../../infra/socket/client.js';
 import { parseDocBinary } from '../../utils/yjs-parser.js';
 
 // ---------------------------------------------------------------------------
-// JWT extraction
+// Session token extraction
 // ---------------------------------------------------------------------------
 
 function extractBearerToken(authHeader: string | undefined): string {
   if (!authHeader) throw new JwtMissingError();
   const parts = authHeader.split(' ');
   if (parts.length !== 2 || parts[0]!.toLowerCase() !== 'bearer') {
-    throw new JwtInvalidError('Expected: Bearer <token>');
+    throw new JwtInvalidError('Expected: Bearer <sessionToken>');
   }
   return parts[1]!;
 }
@@ -40,17 +40,17 @@ function extractBearerToken(authHeader: string | undefined): string {
 const workspaceParams = z.object({ workspaceId: z.string().uuid() });
 const docParams = z.object({
   workspaceId: z.string().uuid(),
-  docId: z.string().uuid(),
+  docId: z.string().min(1),
 });
 
 /**
  * Create a connected socket client, execute a callback, then disconnect.
  */
 async function withSocket<T>(
-  jwtToken: string,
+  sessionToken: string,
   fn: (client: AffineSocketClient) => Promise<T>,
 ): Promise<T> {
-  const client = new AffineSocketClient({ jwtToken });
+  const client = new AffineSocketClient({ sessionToken });
   await client.connect();
   try {
     return await fn(client);
@@ -67,7 +67,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /sync/workspaces/:workspaceId/join
   // Join a workspace room (subscribe to doc updates for that workspace)
   fastify.post(
-    '/join',
+    '/:workspaceId/join',
     {
       schema: {
         params: workspaceParams,
@@ -75,10 +75,10 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParams.parse(request.params);
 
-      return withSocket(jwt, async (client) => ({
+      return withSocket(sessionToken, async (client) => ({
         clientId: await client.spaceJoin('workspace', workspaceId),
       }));
     },
@@ -87,7 +87,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // DELETE /sync/workspaces/:workspaceId/join
   // Leave a workspace room
   fastify.delete(
-    '/join',
+    '/:workspaceId/join',
     {
       schema: {
         params: workspaceParams,
@@ -95,10 +95,10 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParams.parse(request.params);
 
-      await withSocket(jwt, async (client) => {
+      await withSocket(sessionToken, async (client) => {
         await client.spaceLeave('workspace', workspaceId);
       });
       return { ok: true };
@@ -108,7 +108,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /sync/workspaces/:workspaceId/docs/timestamps
   // Get last-modified timestamps for all docs in a workspace
   fastify.get(
-    '/docs/timestamps',
+    '/:workspaceId/docs/timestamps',
     {
       schema: {
         params: workspaceParams,
@@ -121,20 +121,21 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParams.parse(request.params);
       const { since } = request.query as { since?: number };
 
-      return withSocket(jwt, async (client) =>
-        client.spaceLoadDocTimestamps('workspace', workspaceId, since),
-      );
+      return withSocket(sessionToken, async (client) => {
+        await client.spaceJoin('workspace', workspaceId);
+        return client.spaceLoadDocTimestamps('workspace', workspaceId, since);
+      });
     },
   );
 
   // GET /sync/workspaces/:workspaceId/docs/:docId
   // Load doc binary snapshot (full Yjs state as base64)
   fastify.get(
-    '/docs/:docId',
+    '/:workspaceId/docs/:docId',
     {
       schema: {
         params: docParams,
@@ -155,13 +156,14 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParams.parse(request.params);
       const { stateVector } = request.query as { stateVector?: string };
 
-      const result = await withSocket(jwt, async (client) =>
-        client.spaceLoadDoc('workspace', workspaceId, docId, stateVector),
-      );
+      const result = await withSocket(sessionToken, async (client) => {
+        await client.spaceJoin('workspace', workspaceId);
+        return client.spaceLoadDoc('workspace', workspaceId, docId, stateVector);
+      });
 
       return {
         docId,
@@ -175,7 +177,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /sync/workspaces/:workspaceId/docs/:docId/text
   // Load doc binary and extract plain text + metadata via Yjs parser
   fastify.get(
-    '/docs/:docId/text',
+    '/:workspaceId/docs/:docId/text',
     {
       schema: {
         params: docParams,
@@ -191,14 +193,18 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParams.parse(request.params);
 
-      const result = await withSocket(jwt, async (client) =>
-        client.spaceLoadDoc('workspace', workspaceId, docId),
-      );
+      const result = await withSocket(sessionToken, async (client) => {
+        await client.spaceJoin('workspace', workspaceId);
+        return client.spaceLoadDoc('workspace', workspaceId, docId);
+      });
 
-      const parsed = parseDocBinary(result.state, docId);
+      // Apply missing updates directly — AFFiNE returns the complete doc state
+      // in the 'missing' field (even without a stateVector), while 'state' is
+      // just a Yjs state vector (not the doc content).
+      const parsed = parseDocBinary(result.missing.length > 0 ? result.missing : result.state, docId);
       return {
         docId: parsed.docId || docId,
         title: parsed.title,
@@ -213,7 +219,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // Push a Yjs update to create or update a doc
   // Body: { update: base64-encoded Yjs binary update }
   fastify.put(
-    '/docs/:docId',
+    '/:workspaceId/docs/:docId',
     {
       schema: {
         params: docParams,
@@ -229,14 +235,15 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParams.parse(request.params);
       const { update } = z.object({ update: z.string().min(1) }).parse(request.body);
 
       const binaryUpdate = base64ToUint8Array(update);
-      const timestamp = await withSocket(jwt, async (client) =>
-        client.spacePushDocUpdate('workspace', workspaceId, docId, binaryUpdate),
-      );
+      const timestamp = await withSocket(sessionToken, async (client) => {
+        await client.spaceJoin('workspace', workspaceId);
+        return client.spacePushDocUpdate('workspace', workspaceId, docId, binaryUpdate);
+      });
 
       return { docId, timestamp };
     },
@@ -245,7 +252,7 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
   // DELETE /sync/workspaces/:workspaceId/docs/:docId
   // Permanently delete a doc from the workspace
   fastify.delete(
-    '/docs/:docId',
+    '/:workspaceId/docs/:docId',
     {
       schema: {
         params: docParams,
@@ -253,10 +260,11 @@ const workspaceSyncRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParams.parse(request.params);
 
-      await withSocket(jwt, async (client) => {
+      await withSocket(sessionToken, async (client) => {
+        await client.spaceJoin('workspace', workspaceId);
         await client.spaceDeleteDoc('workspace', workspaceId, docId);
       });
       return { ok: true };

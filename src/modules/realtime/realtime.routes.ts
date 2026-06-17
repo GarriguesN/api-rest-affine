@@ -4,7 +4,7 @@
  * Proxies to AFFiNE's Socket.IO RealtimeGateway for live query data.
  * All routes require:
  *   - x-api-key: bridge API key (standard auth guard)
- *   - Authorization: Bearer <jwt> — JWT token from /auth/token/exchange
+ *   - Authorization: Bearer <sessionToken> — session token from /auth/login
  *
  * These routes are stateless: each request opens a temporary Socket.IO
  * connection, executes the RPC, and closes.
@@ -74,8 +74,8 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
-      return gateway.getUserProfile(jwt);
+      const sessionToken = extractBearerToken(request.headers.authorization);
+      return gateway.getUserProfile(sessionToken);
     },
   );
 
@@ -94,8 +94,8 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
-      return gateway.getUserSettings(jwt);
+      const sessionToken = extractBearerToken(request.headers.authorization);
+      return gateway.getUserSettings(sessionToken);
     },
   );
 
@@ -119,8 +119,8 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
-      return gateway.getUserAccessTokens(jwt);
+      const sessionToken = extractBearerToken(request.headers.authorization);
+      return gateway.getUserAccessTokens(sessionToken);
     },
   );
 
@@ -135,8 +135,8 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
-      return gateway.getNotificationCount(jwt);
+      const sessionToken = extractBearerToken(request.headers.authorization);
+      return gateway.getNotificationCount(sessionToken);
     },
   );
 
@@ -162,8 +162,8 @@ const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
-      return gateway.getUserQuotaState(jwt);
+      const sessionToken = extractBearerToken(request.headers.authorization);
+      return gateway.getUserQuotaState(sessionToken);
     },
   );
 };
@@ -195,9 +195,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
-      return gateway.getWorkspaceAccess(workspaceId, jwt);
+      return gateway.getWorkspaceAccess(workspaceId, sessionToken);
     },
   );
 
@@ -220,9 +220,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
-      return gateway.getWorkspaceConfig(workspaceId, jwt);
+      return gateway.getWorkspaceConfig(workspaceId, sessionToken);
     },
   );
 
@@ -258,12 +258,12 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
       const { skip, take, query } = request.query as {
         skip?: number; take?: number; query?: string;
       };
-      return gateway.getWorkspaceMembers(workspaceId, jwt, clean({ skip, take, query }));
+      return gateway.getWorkspaceMembers(workspaceId, sessionToken, clean({ skip, take, query }));
     },
   );
 
@@ -284,9 +284,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
-      return gateway.getWorkspaceInviteLink(workspaceId, jwt);
+      return gateway.getWorkspaceInviteLink(workspaceId, sessionToken);
     },
   );
 
@@ -315,9 +315,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
-      return gateway.getWorkspaceQuotaState(workspaceId, jwt);
+      return gateway.getWorkspaceQuotaState(workspaceId, sessionToken);
     },
   );
 
@@ -336,9 +336,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
-      return gateway.getWorkspaceEmbeddingProgress(workspaceId, jwt);
+      return gateway.getWorkspaceEmbeddingProgress(workspaceId, sessionToken);
     },
   );
 
@@ -360,10 +360,10 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId } = workspaceParamsSchema.parse(request.params);
       const { blobId, taskId } = request.query as { blobId?: string; taskId?: string };
-      return gateway.getCopilotTranscriptTask(workspaceId, jwt, clean({ blobId, taskId }));
+      return gateway.getCopilotTranscriptTask(workspaceId, sessionToken, clean({ blobId, taskId }));
     },
   );
 
@@ -393,9 +393,9 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParamsSchema.parse(request.params);
-      return gateway.getDocShareState(workspaceId, docId, jwt);
+      return gateway.getDocShareState(workspaceId, docId, sessionToken);
     },
   );
 
@@ -433,10 +433,10 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParamsSchema.parse(request.params);
       const { first, after } = request.query as { first?: number; after?: string };
-      return gateway.getDocGrants(workspaceId, docId, jwt, {
+      return gateway.getDocGrants(workspaceId, docId, sessionToken, {
         first: first ?? 20,
         ...(after !== undefined ? { after } : {}),
       });
@@ -468,10 +468,10 @@ const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request) => {
-      const jwt = extractBearerToken(request.headers.authorization);
+      const sessionToken = extractBearerToken(request.headers.authorization);
       const { workspaceId, docId } = docParamsSchema.parse(request.params);
       const { after, first } = request.query as { after?: string; first?: number };
-      return gateway.getCommentChanges(workspaceId, docId, jwt, clean({ after, first }));
+      return gateway.getCommentChanges(workspaceId, docId, sessionToken, clean({ after, first }));
     },
   );
 };

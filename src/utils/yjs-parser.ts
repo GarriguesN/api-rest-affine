@@ -33,7 +33,7 @@ export interface ParsedDoc {
 
 /**
  * Parse an AFFiNE doc binary (Yjs snapshot) and extract:
- * - Title (from meta.title)
+ * - Title (from meta.title, or from first block's prop:title)
  * - Plain text content (recursively from all text-bearing blocks)
  * - Block count
  */
@@ -47,7 +47,8 @@ export function parseDocBinary(
   const meta = doc.getMap('meta');
   const blocks = doc.getMap('blocks');
 
-  const title = extractTitle(meta);
+  // Title: check meta.title first, then fall back to block-level prop:title
+  const title = extractTitle(meta) ?? extractBlockTitle(blocks);
   const mode = extractMode(meta);
   const { text, blockCount } = extractBlocks(blocks);
 
@@ -58,6 +59,23 @@ export function parseDocBinary(
     plainText: text.trim(),
     blockCount,
   };
+}
+
+/**
+ * Extract title from the first block that has a prop:title.
+ * In AFFiNE, the page title is stored in the root page block's prop:title,
+ * not in the meta map.
+ */
+function extractBlockTitle(blocks: Y.Map<unknown>): string | null {
+  for (const block of blocks.values()) {
+    if (!(block instanceof Y.Map)) continue;
+    const titleProp = block.get('prop:title');
+    if (titleProp) {
+      const extracted = extractYValue(titleProp);
+      if (extracted) return extracted;
+    }
+  }
+  return null;
 }
 
 /**

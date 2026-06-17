@@ -31,7 +31,7 @@ const loginResponseSchema = z.object({
   emailVerified: z.boolean(),
   hasPassword: z.boolean().nullable(),
   avatarUrl: z.string().nullable(),
-  features: z.array(z.string()),
+  features: z.array(z.string()).optional(),
   token: z.string().optional(), // exchange code for native apps
   jwtToken: z.string().optional(), // JWT for Socket.IO auth
 });
@@ -44,7 +44,7 @@ const sessionResponseSchema = z.object({
     emailVerified: z.boolean(),
     hasPassword: z.boolean().nullable(),
     avatarUrl: z.string().nullable(),
-    features: z.array(z.string()),
+    features: z.array(z.string()).optional(),
   }).nullable(),
 });
 
