@@ -33,6 +33,7 @@ const loginResponseSchema = z.object({
   avatarUrl: z.string().nullable(),
   features: z.array(z.string()),
   token: z.string().optional(), // exchange code for native apps
+  jwtToken: z.string().optional(), // JWT for Socket.IO auth
 });
 
 const sessionResponseSchema = z.object({
@@ -76,38 +77,65 @@ function buildCookieHeader(session: string, csrf: string): string {
 
 /**
  * Proxy to Affine's auth endpoint and return user + set bridge session cookie.
+ * Also fetches the JWT token for Socket.IO auth via the native exchange flow.
  */
 async function proxyToAffineAuth(
   email: string,
   password: string,
-): Promise<{ user: z.infer<typeof loginResponseSchema>; session: string; csrf: string }> {
-  const url = `${env.AFFINE_BASE_URL}/api/auth/sign-in`;
-
-  const response = await fetch(url, {
+): Promise<{
+  user: z.infer<typeof loginResponseSchema>;
+  session: string;
+  csrf: string;
+  jwtToken: string | null;
+}> {
+  // Step 1: Sign in as "native" client to get an exchangeCode
+  const signInUrl = `${env.AFFINE_BASE_URL}/api/auth/sign-in`;
+  const signInResponse = await fetch(signInUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-affine-client-kind': 'native',
+    },
     body: JSON.stringify({ email, password }),
-    credentials: 'include', // receive cookies from Affine
+    credentials: 'include',
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText);
-    throw new BadRequestError(`Affine sign-in failed: ${response.status} ${text}`);
+  if (!signInResponse.ok) {
+    const text = await signInResponse.text().catch(() => signInResponse.statusText);
+    throw new BadRequestError(`Affine sign-in failed: ${signInResponse.status} ${text}`);
   }
 
-  const { session, csrf, rawCookies } = extractCookiesFromResponse(response);
-
+  const { session, csrf } = extractCookiesFromResponse(signInResponse);
   if (!session || !csrf) {
-    throw new ServiceUnavailableError(
-      'Affine',
-      'sign-in returned no session cookies',
-    );
+    throw new ServiceUnavailableError('Affine', 'sign-in returned no session cookies');
   }
 
-  // The response body contains user info
-  const user = loginResponseSchema.parse(await response.json());
+  const signInBody = await signInResponse.json() as { exchangeCode?: string };
+  const exchangeCode = signInBody?.exchangeCode;
 
-  return { user, session, csrf };
+  // Step 2: Exchange code for JWT token (needed for Socket.IO auth)
+  let jwtToken: string | null = null;
+  if (exchangeCode) {
+    const exchangeUrl = `${env.AFFINE_BASE_URL}/api/auth/native/exchange`;
+    const exchangeResponse = await fetch(exchangeUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-affine-client-kind': 'native',
+      },
+      body: JSON.stringify({ code: exchangeCode }),
+      credentials: 'include',
+    });
+
+    if (exchangeResponse.ok) {
+      const exchangeBody = await exchangeResponse.json() as { token?: string };
+      jwtToken = exchangeBody?.token ?? null;
+    }
+  }
+
+  // Re-parse with the extended schema
+  const user = loginResponseSchema.parse(signInBody);
+  return { user, session, csrf, jwtToken };
 }
 
 /**
@@ -170,9 +198,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         response: {
           200: z.object({
             user: loginResponseSchema,
-            // Expose cookies so the client can store them and use for GraphQL requests
             sessionCookie: z.string(),
             csrfToken: z.string(),
+            jwtToken: z.string().nullable(),
           }),
         },
       },
@@ -180,7 +208,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { email, password } = loginBodySchema.parse(request.body);
 
-      const { user, session, csrf } = await proxyToAffineAuth(email, password);
+      const { user, session, csrf, jwtToken } = await proxyToAffineAuth(email, password);
 
       // Set cookies on the bridge response (bridge session = Affine session)
       reply.setCookie('affine_session', session, {
@@ -203,6 +231,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         user,
         sessionCookie: session,
         csrfToken: csrf,
+        jwtToken,
       });
     },
   );
@@ -292,6 +321,43 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         registered: Boolean(data.registered),
         hasPassword: data.hasPassword == null ? null : Boolean(data.hasPassword),
       });
+    },
+  );
+
+  // POST /auth/token/exchange — Exchange an exchangeCode for a JWT token (for Socket.IO auth)
+  fastify.post(
+    '/auth/token/exchange',
+    {
+      schema: {
+        body: z.object({ code: z.string().min(1) }),
+        response: {
+          200: z.object({ token: z.string() }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { code } = z.object({ code: z.string().min(1) }).parse(request.body);
+
+      const url = `${env.AFFINE_BASE_URL}/api/auth/native/exchange`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-affine-client-kind': 'native',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      if (!response.ok) {
+        throw new ServiceUnavailableError('Affine', `token exchange failed: ${response.status}`);
+      }
+
+      const data = await response.json() as { token?: string };
+      if (!data.token) {
+        throw new ServiceUnavailableError('Affine', 'token exchange returned no token');
+      }
+
+      return reply.send({ token: data.token });
     },
   );
 };

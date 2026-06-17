@@ -15,6 +15,7 @@ import { errorHandler } from './plugins/error-handler.js';
 import { authGuard } from './infra/http/auth-guard.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { realtimeRoutes } from './modules/realtime/realtime.routes.js';
 import { workspaceRoutes } from './modules/workspaces/workspace.routes.js';
 import { collectionRoutes } from './modules/collections/collection.routes.js';
 import { pageRoutes } from './modules/pages/page.routes.js';
@@ -43,6 +44,7 @@ export function buildApp(opts: { logger?: boolean } = {}) {
   // API v1 — protected by x-api-key
   fastify.register(async (api) => {
     api.addHook('onRequest', authGuard);
+    api.register(realtimeRoutes);
     api.register(workspaceRoutes);
     api.register(collectionRoutes);
     api.register(pageRoutes);

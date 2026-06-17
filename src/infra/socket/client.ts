@@ -1,13 +1,13 @@
 /**
  * AFFiNE Socket.IO client infrastructure.
  *
- * Manages the Socket.IO connection to the AFFiNE server.
+ * Manages Socket.IO connections to the AFFiNE server with JWT auth.
  * Supports two protocols:
  * - RealtimeGateway: live query subscriptions (realtime:request, realtime:subscribe)
  * - SpaceSyncGateway: Yjs doc sync (space:join, space:load-doc, space:push-doc-update)
  *
- * Auth is handled via handshake auth — the session token is passed
- * as part of the Socket.IO connection handshake.
+ * Auth: JWT token passed via Socket.IO handshake auth.
+ * The JWT is obtained via POST /api/auth/native/exchange from an exchangeCode.
  */
 
 import { io, Socket } from 'socket.io-client';
@@ -30,6 +30,10 @@ import {
 } from '../../types/realtime.js';
 
 const CLIENT_VERSION = '0.26.0';
+
+// ---------------------------------------------------------------------------
+// Socket event interfaces (server → client)
+// ---------------------------------------------------------------------------
 
 interface ServerToClientEvents {
   'realtime:event': (event: RealtimeEvent) => void;
@@ -107,74 +111,85 @@ interface ClientToServerEvents {
 
 export type AffineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-type SocketIORequest<Input, Output> = {
-  input: Input;
-  output: Output;
+export interface SocketOptions {
+  /** JWT token for Socket.IO handshake auth (from /auth/token/exchange) */
+  jwtToken: string;
+  /** Auto-connect on creation (default: true) */
+  autoConnect?: boolean;
+  /** Transport: prefer polling for self-hosted (default: ['polling']) */
+  transports?: ('polling' | 'websocket')[];
+  /** Reconnection attempts (default: 5) */
+  reconnectionAttempts?: number;
+  /** Reconnection delay base in ms (default: 1000) */
+  reconnectionDelay?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Socket factory
+// ---------------------------------------------------------------------------
+
+const DEFAULT_OPTIONS: Required<Omit<SocketOptions, 'jwtToken'>> = {
+  autoConnect: true,
+  transports: ['polling'], // self-hosted may not support websocket well
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 };
 
 /**
- * AFFiNE Socket.IO client.
- *
- * Manages a single Socket.IO connection with:
- * - Automatic reconnection
- * - Auth via session token (from Affine auth cookies)
- * - Typed request/ack wrappers for all operations
- * - Event emitter for subscriptions
+ * Create a new AFFiNE Socket.IO socket instance with JWT auth.
+ * Each call creates a fresh socket — caller manages lifecycle (connect/disconnect).
+ */
+export function createAffineSocket(options: SocketOptions): AffineSocket {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const socketUrl = `${env.AFFINE_BASE_URL}/socket.io`;
+
+  const socket = io(socketUrl, {
+    // Auth: JWT token with explicit tokenType (required by AFFiNE server)
+    auth: {
+      token: options.jwtToken,
+      tokenType: 'jwt',
+    },
+    // Transport: polling preferred for self-hosted; websocket optional
+    transports: opts.transports,
+    // Reconnection
+    autoConnect: opts.autoConnect,
+    reconnection: true,
+    reconnectionAttempts: opts.reconnectionAttempts,
+    reconnectionDelay: opts.reconnectionDelay,
+    reconnectionDelayMax: 30_000,
+    // Version header
+    extraHeaders: {
+      'x-affine-client-version': CLIENT_VERSION,
+    },
+  } as Parameters<typeof io>[1]) as AffineSocket;
+
+  return socket;
+}
+
+// ---------------------------------------------------------------------------
+// AffineSocketClient — convenience wrapper with connect/disconnect lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Convenience wrapper that manages connect/disconnect lifecycle for a socket.
+ * Use this for one-off requests or when you want automatic lifecycle management.
  */
 export class AffineSocketClient extends EventEmitter {
   private socket: AffineSocket | null = null;
-  private sessionToken: string | null = null;
-  private reconnectAttempts = 0;
-  private readonly maxReconnectAttempts = 10;
-  private readonly baseDelayMs = 1000;
-  private pendingRequests = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: ReturnType<typeof setTimeout>;
-  }>();
-  private subscriptionCounter = 0;
+  private readonly options: SocketOptions;
 
-  constructor(
-    private readonly sessionTokenProvider: () => string | null,
-  ) {
+  constructor(options: SocketOptions) {
     super();
+    this.options = options;
   }
 
   /**
-   * Connect to the AFFiNE Socket.IO server.
-   * Returns a promise that resolves when connected.
+   * Connect the socket. Idempotent — no-op if already connected.
    */
   async connect(): Promise<void> {
     if (this.socket?.connected) return;
 
-    this.sessionToken = this.sessionTokenProvider();
-    if (!this.sessionToken) {
-      throw new Error('No session token available for Socket.IO connection');
-    }
-
-    const socketUrl = `${env.AFFINE_BASE_URL}/socket.io/`;
-
-    this.socket = io(socketUrl, {
-      transports: ['polling', 'websocket'], // self-hosted may not support websocket
-      autoConnect: true,
-      reconnection: true,
-      reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: this.baseDelayMs,
-      reconnectionDelayMax: 30_000,
-      // Auth is passed via handshake — see below
-      auth: {},
-      // Pass client version
-      query: {
-        clientVersion: CLIENT_VERSION,
-      },
-      extraHeaders: {
-        'x-affine-client-version': CLIENT_VERSION,
-      },
-    }) as AffineSocket;
-
-    // Set up auth callback (called during handshake)
-    // The socket.io-client uses auth as either an object or a callback
-    // We pass the token via the auth callback
+    this.socket = createAffineSocket(this.options);
     this.setupSocket(this.socket);
 
     return new Promise((resolve, reject) => {
@@ -184,7 +199,6 @@ export class AffineSocketClient extends EventEmitter {
 
       this.socket!.once('connect', () => {
         clearTimeout(timeout);
-        this.reconnectAttempts = 0;
         resolve();
       });
 
@@ -192,47 +206,39 @@ export class AffineSocketClient extends EventEmitter {
         clearTimeout(timeout);
         reject(new Error(`Socket.IO connection failed: ${err.message}`));
       });
+
+      // Trigger connection if autoConnect is false
+      if (!this.options.autoConnect) {
+        this.socket!.connect();
+      }
     });
   }
 
   /**
-   * Disconnect from the Socket.IO server.
+   * Disconnect the socket.
    */
   disconnect(): void {
     if (!this.socket) return;
     this.socket.disconnect();
     this.socket = null;
-    this.pendingRequests.forEach(req => {
-      clearTimeout(req.timeout);
-      req.reject(new Error('Socket.IO disconnected'));
-    });
-    this.pendingRequests.clear();
   }
 
   /**
-   * Check if connected.
+   * Whether the socket is currently connected.
    */
   get isConnected(): boolean {
     return this.socket?.connected ?? false;
   }
 
   // -------------------------------------------------------------------------
-  // Auth / session management
+  // Internal setup
   // -------------------------------------------------------------------------
 
   private setupSocket(socket: AffineSocket): void {
-    // Auth: pass session token in handshake
-    // @ts-expect-error — socket.io-client allows overriding auth via the auth setter
-    socket.auth = {
-      token: this.sessionToken,
-    };
-
-    // Listen for realtime events
     socket.on('realtime:event', (event: RealtimeEvent) => {
       this.emit('realtime:event', event);
     });
 
-    // Listen for doc sync events
     socket.on('space:broadcast-doc-update', (msg) => {
       this.emit('space:broadcast-doc-update', msg);
     });
@@ -241,53 +247,36 @@ export class AffineSocketClient extends EventEmitter {
       this.emit('space:broadcast-doc-updates', msg);
     });
 
-    // Handle disconnect with reconnect logic
     socket.on('disconnect', (reason: string) => {
       this.emit('disconnect', reason);
-      if (reason !== 'io client disconnect') {
-        this.handleDisconnect();
-      }
     });
 
     socket.on('connect_error', (err: Error) => {
       this.emit('connect_error', err);
-      this.reconnectAttempts++;
     });
-  }
-
-  private handleDisconnect(): void {
-    // Refresh session token on reconnect
-    this.sessionToken = this.sessionTokenProvider();
-    if (this.socket && this.sessionToken) {
-      // @ts-expect-error
-      this.socket.auth = { token: this.sessionToken };
-    }
   }
 
   // -------------------------------------------------------------------------
   // Generic emit-with-ack
   // -------------------------------------------------------------------------
 
-  /**
-   * Emit a message and wait for acknowledgment.
-   */
-  private emitWithAck<T>(event: string, data: unknown): Promise<T> {
+  private emitWithAck<T>(event: string, data: unknown, timeoutMs = 15_000): Promise<T> {
     if (!this.socket?.connected) {
       return Promise.reject(new Error('Socket.IO not connected'));
     }
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.pendingRequests.delete(event);
         reject(new Error(`Socket.IO ack timeout for event: ${event}`));
-      }, 15_000);
+      }, timeoutMs);
 
-      this.socket!.emit(event as never, data, (response: unknown) => {
+      (this.socket! as unknown as { emit: (event: string, data: unknown, ack: (res: unknown) => void) => void })
+        .emit(event, data, (response: unknown) => {
         clearTimeout(timeout);
         const ack = response as RealtimeAck<T>;
         if ('error' in ack) {
           const err = ack.error as RealtimeError;
-          reject(new Error(`Socket.IO error [${err.name}]: ${err.message}`));
+          reject(new Error(`[${err.name}] ${err.message}`));
         } else {
           resolve((ack as { data: T }).data);
         }
@@ -323,8 +312,7 @@ export class AffineSocketClient extends EventEmitter {
   // -------------------------------------------------------------------------
 
   /**
-   * Subscribe to a realtime topic.
-   * Returns the subscription ID.
+   * Subscribe to a realtime topic. Returns the subscription ID.
    */
   async realtimeSubscribe<Topic extends RealtimeTopicName>(
     topic: Topic,
@@ -356,23 +344,19 @@ export class AffineSocketClient extends EventEmitter {
   // Space Sync Gateway
   // -------------------------------------------------------------------------
 
-  /**
-   * Join a workspace or userspace room.
-   */
+  /** Join a workspace or userspace room. */
   async spaceJoin(
     spaceType: 'workspace' | 'userspace',
     spaceId: string,
-  ): Promise<void> {
-    await this.emitWithAck<{ clientId: string; success: boolean }>('space:join', {
-      spaceType,
-      spaceId,
-      clientVersion: CLIENT_VERSION,
-    });
+  ): Promise<string> {
+    const result = await this.emitWithAck<{ clientId: string; success: boolean }>(
+      'space:join',
+      { spaceType, spaceId, clientVersion: CLIENT_VERSION },
+    );
+    return result.clientId;
   }
 
-  /**
-   * Leave a workspace or userspace room.
-   */
+  /** Leave a workspace or userspace room. */
   async spaceLeave(
     spaceType: 'workspace' | 'userspace',
     spaceId: string,
@@ -385,7 +369,7 @@ export class AffineSocketClient extends EventEmitter {
 
   /**
    * Load a doc (full snapshot or diff from state vector).
-   * Returns base64-encoded Yjs binary.
+   * Returns binary data as Uint8Array.
    */
   async spaceLoadDoc(
     spaceType: 'workspace' | 'userspace',
@@ -393,10 +377,11 @@ export class AffineSocketClient extends EventEmitter {
     docId: string,
     stateVector?: string,
   ): Promise<{ missing: Uint8Array; state: Uint8Array; timestamp: number }> {
-    const result = await this.emitWithAck<{ missing: string; state: string; timestamp: number }>(
-      'space:load-doc',
-      { spaceType, spaceId, docId, stateVector },
-    );
+    const result = await this.emitWithAck<{
+      missing: string;
+      state: string;
+      timestamp: number;
+    }>('space:load-doc', { spaceType, spaceId, docId, stateVector });
 
     return {
       missing: base64ToUint8Array(result.missing),
@@ -405,9 +390,7 @@ export class AffineSocketClient extends EventEmitter {
     };
   }
 
-  /**
-   * Load timestamps for all docs in a space.
-   */
+  /** Load timestamps for all docs in a space. */
   async spaceLoadDocTimestamps(
     spaceType: 'workspace' | 'userspace',
     spaceId: string,
@@ -422,6 +405,7 @@ export class AffineSocketClient extends EventEmitter {
 
   /**
    * Push a Yjs update to a doc (create or update).
+   * Returns server-side timestamp.
    */
   async spacePushDocUpdate(
     spaceType: 'workspace' | 'userspace',
@@ -429,21 +413,19 @@ export class AffineSocketClient extends EventEmitter {
     docId: string,
     update: Uint8Array,
   ): Promise<number> {
-    const result = await this.emitWithAck<{ accepted: true; timestamp?: number }>(
-      'space:push-doc-update',
-      {
-        spaceType,
-        spaceId,
-        docId,
-        update: uint8ArrayToBase64(update),
-      },
-    );
+    const result = await this.emitWithAck<{
+      accepted: true;
+      timestamp?: number;
+    }>('space:push-doc-update', {
+      spaceType,
+      spaceId,
+      docId,
+      update: uint8ArrayToBase64(update),
+    });
     return result.timestamp ?? Date.now();
   }
 
-  /**
-   * Delete a doc.
-   */
+  /** Delete a doc from the space. */
   async spaceDeleteDoc(
     spaceType: 'workspace' | 'userspace',
     spaceId: string,
@@ -485,28 +467,28 @@ function base64ToUint8Array(base64: string): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
-// Singleton socket manager
+// Convenience: one-shot request helpers
 // ---------------------------------------------------------------------------
 
-let socketInstance: AffineSocketClient | null = null;
-
-/**
- * Get or create the singleton Socket.IO client.
- * The session token is automatically fetched from the current cookies.
- */
-export function getAffineSocket(
-  sessionTokenProvider: () => string | null,
-): AffineSocketClient {
-  if (!socketInstance) {
-    socketInstance = new AffineSocketClient(sessionTokenProvider);
-  }
-  return socketInstance;
+export interface OneShotOptions {
+  jwtToken: string;
+  timeoutMs?: number;
 }
 
 /**
- * Close the singleton socket and reset.
+ * Execute a one-shot realtime request — connect, request, disconnect.
+ * Use for simple RPC calls where you don't need a persistent connection.
  */
-export function closeAffineSocket(): void {
-  socketInstance?.disconnect();
-  socketInstance = null;
+export async function realtimeRequest<Op extends RealtimeRequestName>(
+  op: Op,
+  input: RealtimeRequestInputOf<Op>,
+  options: OneShotOptions,
+): Promise<RealtimeRequestOutputOf<Op>> {
+  const client = new AffineSocketClient({ jwtToken: options.jwtToken });
+  await client.connect();
+  try {
+    return await client.realtimeRequest(op, input);
+  } finally {
+    client.disconnect();
+  }
 }

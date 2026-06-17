@@ -56,3 +56,15 @@ export class GraphQLError extends AppError {
     this.graphqlErrors = graphqlErrors;
   }
 }
+
+export class JwtMissingError extends AppError {
+  constructor() {
+    super('Missing Authorization header. Expected: Bearer <jwt-token>', 401, 'JWT_MISSING');
+  }
+}
+
+export class JwtInvalidError extends AppError {
+  constructor(reason = 'Invalid JWT token') {
+    super(reason, 401, 'JWT_INVALID');
+  }
+}
